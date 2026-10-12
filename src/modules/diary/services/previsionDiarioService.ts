@@ -166,7 +166,7 @@ export class PrevisionDiarioService {
   }): Promise<{ records: PrevisionRelatorioListItem[]; total: number; page: number }> {
     const { obraId, page = 0, limit = 50, search = '' } = params;
     try {
-      const url = `${this.baseUrl}/data?table=relatorio&obra=${encodeURIComponent(obraId)}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`;
+      const url = `${this.baseUrl}/data?table=relatorios&obra=${encodeURIComponent(obraId)}&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
