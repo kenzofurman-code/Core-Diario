@@ -23,6 +23,7 @@ import { ShortTermPlanningPanel } from './modules/diary/components/desktop/Short
 import { ContactsManagerPanel } from './modules/diary/components/desktop/ContactsManagerPanel';
 import { LocationsAndR2Panel } from './modules/diary/components/desktop/LocationsAndR2Panel';
 import { ReportsHistoryPanel } from './modules/diary/components/desktop/ReportsHistoryPanel';
+import { PrevisionArchiveViewerPanel } from './modules/diary/components/desktop/PrevisionArchiveViewerPanel';
 import { AuthScreen } from './modules/auth/AuthScreen';
 import {
   SourceConflict,
@@ -345,6 +346,11 @@ export const App: React.FC = () => {
     } catch (err: any) {
       alert(err?.message || 'Não foi possível excluir o rascunho.');
     }
+  };
+
+  const handleStateUpdate = (newState: DiaryState) => {
+    DiaryStorageService.saveState(newState);
+    setDiaryState({ ...newState });
   };
 
   // Handlers do Modo Engenharia (Fases 3 e 4)
@@ -812,6 +818,7 @@ export const App: React.FC = () => {
                 <h2 className="text-base font-bold text-ink">
                   {engineeringSection === 'OVERVIEW' && 'Visão Geral & Governança do RDO'}
                   {engineeringSection === 'REPORTS_HISTORY' && 'Histórico de RDOs, Dias Anteriores & Arquivo'}
+                  {engineeringSection === 'PREVISION_ARCHIVE' && 'Acervo de Diários Prevision (16 Obras na VPS & 2.198 RDOs)'}
                   {engineeringSection === 'WORKFORCE' && 'Gestão & Edição do Efetivo de Obra'}
                   {engineeringSection === 'PRODUCTION' && 'Apontamento & Avanço Físico Diário'}
                   {engineeringSection === 'SHORT_TERM_PLANNING' && 'Curto Prazo — Planejamento Semanal (LPS)'}
@@ -1017,6 +1024,17 @@ export const App: React.FC = () => {
                     handleSwitchReportingDay(date);
                     setIsPhotoDossierOpen(true);
                   }}
+                />
+              </div>
+            )}
+
+            {/* SEÇÃO: ACERVO PREVISION (16 OBRAS NA VPS) */}
+            {engineeringSection === 'PREVISION_ARCHIVE' && (
+              <div className="animate-in fade-in duration-200">
+                <PrevisionArchiveViewerPanel
+                  diaryState={diaryState}
+                  onUpdateState={handleStateUpdate}
+                  onNavigateToSection={(sec) => setEngineeringSection(sec)}
                 />
               </div>
             )}

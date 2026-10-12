@@ -16,6 +16,7 @@ import {
   Phone,
   Layers,
   History,
+  Database,
 } from 'lucide-react';
 import { EngineeringNavSection, UserContext } from '../../modules/diary/types/diary.types';
 
@@ -65,6 +66,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <History className="w-4 h-4 shrink-0" />,
       badgeCount: pendingReportsCount && pendingReportsCount > 0 ? pendingReportsCount : undefined,
       badgeColor: 'bg-warning text-slate-950 font-bold',
+    },
+    {
+      id: 'PREVISION_ARCHIVE',
+      label: 'Acervo Prevision',
+      sublabel: '16 Obras & 2.198 RDOs',
+      icon: <Database className="w-4 h-4 shrink-0" />,
+      badgeCount: 16,
+      badgeColor: 'bg-blue-600 text-white font-bold',
     },
     {
       id: 'WORKFORCE',

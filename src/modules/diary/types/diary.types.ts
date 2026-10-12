@@ -499,6 +499,7 @@ export interface WhatsAppInboundWebhookPayload {
 export type EngineeringNavSection =
   | 'OVERVIEW'            // Visão Geral & Governança (KPIs, Assinaturas, Fechamento)
   | 'REPORTS_HISTORY'     // Histórico & Calendário de RDOs Anteriores (Navegação & Edição Retroativa)
+  | 'PREVISION_ARCHIVE'   // Acervo de Diários Prevision (16 Obras na VPS & Leitura de 2.198 RDOs)
   | 'WORKFORCE'           // Gestão & Edição de Efetivo (Próprios vs Terceirizados)
   | 'PRODUCTION'          // Apontamento & Edição de Produção Diária
   | 'SHORT_TERM_PLANNING' // Planejamento Semanal de Curto Prazo (Atribuição por Encarregado)

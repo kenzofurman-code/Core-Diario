@@ -1154,7 +1154,7 @@ export class DiaryStorageService {
     }
   }
 
-  private static saveState(state: DiaryState): void {
+  public static saveState(state: DiaryState): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     // Sincroniza automaticamente a data salva no arquivo geral de dias
     if (state.reportingDay?.report_date) {
