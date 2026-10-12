@@ -1,0 +1,311 @@
+{
+  "name": "ConstruKore RDO — Coleta Ativa & Inbound WhatsApp (Evolution API + Whisper)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "evolution-rdo-inbound",
+        "options": {}
+      },
+      "id": "node-webhook-inbound",
+      "name": "Webhook Evolution API (Inbound)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        340
+      ],
+      "webhookId": "construkore-evolution-inbound"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Filtra mensagens enviadas pelo próprio bot\nconst body = $input.first().json.body || $input.first().json;\n\nif (!body || !body.data || body.data.key?.fromMe) {\n  return [];\n}\n\nconst key = body.data.key;\nconst message = body.data.message || {};\nconst pushName = body.data.pushName || 'Colaborador da Obra';\nconst remoteJid = key.remoteJid || '';\nconst isGroup = remoteJid.endsWith('@g.us');\n\n// 2. Extrai tipo de mensagem\nlet messageType = 'text';\nlet rawText = '';\nlet mediaUrl = '';\nlet isAudio = false;\nlet isImage = false;\n\nif (message.conversation || message.extendedTextMessage?.text) {\n  messageType = 'text';\n  rawText = message.conversation || message.extendedTextMessage.text;\n} else if (message.audioMessage) {\n  messageType = 'audio';\n  isAudio = true;\n  rawText = '[Áudio WhatsApp]';\n} else if (message.imageMessage) {\n  messageType = 'image';\n  isImage = true;\n  rawText = message.imageMessage.caption || '[Foto de Canteiro sem legenda]';\n}\n\nreturn [{\n  json: {\n    instanceName: body.instance || 'construkore-obra',\n    whatsapp_message_id: key.id,\n    remoteJid,\n    isGroup,\n    sender_phone: remoteJid.replace('@s.whatsapp.net', '').replace('@g.us', ''),\n    sender_name: pushName,\n    messageType,\n    rawText,\n    isAudio,\n    isImage,\n    received_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-filter-sanitize",
+      "name": "Filtrar & Normalizar Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.isAudio }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.isImage }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "image"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "node-switch-media-type",
+      "name": "Router por Tipo de Mídia",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        680,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data",
+        "options": {
+          "bodyParametersUi": {
+            "parameter": [
+              {
+                "name": "model",
+                "value": "whisper-1"
+              },
+              {
+                "name": "language",
+                "value": "pt"
+              },
+              {
+                "name": "prompt",
+                "value": "Vocabulário de canteiro de obras: laje, viga, concreto, slump, armação, alvenaria, reboco, gesso, traço, estacas, impermeabilização, escoramento, operários, pavimentos."
+              }
+            ]
+          }
+        }
+      },
+      "id": "node-whisper-transcribe",
+      "name": "Transcrever Áudio com Whisper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Classificador e Extrator de Entidades de Canteiro\nconst input = $input.first().json;\nconst text = input.text || input.rawText || '';\n\nlet category = 'PRODUCTION_PROGRESS';\nlet suggestedQuantity = null;\nlet suggestedUom = 'm²';\nlet taskName = 'Atividade de Canteiro';\nlet isCritical = false;\nlet materialShortage = null;\n\n// 1. Detecção de Quantidades e Metragens\nconst numMatch = text.match(/(\\d+(?:[,.]\\d+)?)\\s*(m²|m2|metros quadrados|m³|m3|caminhões|pontos|barras)?/i);\nif (numMatch) {\n  suggestedQuantity = parseFloat(numMatch[1].replace(',', '.'));\n  if (numMatch[2]) {\n    const rawUom = numMatch[2].toLowerCase();\n    suggestedUom = rawUom.includes('3') ? 'm³' : rawUom.includes('ponto') ? 'pontos' : 'm²';\n  }\n}\n\n// 2. Detecção de Falta de Material / Suprimentos\nif (/faltou|acabou|sem estoque|não entregou|atraso no cimento|falta de bloco/i.test(text)) {\n  category = 'MATERIAL_SHORTAGE';\n  materialShortage = {\n    material_name: /bloco/i.test(text) ? 'Bloco Cerâmico' : /cimento/i.test(text) ? 'Cimento CP-II' : 'Insumo Crítico',\n    workers_idle: 4,\n    hours_lost: 2.0\n  };\n}\n\n// 3. Detecção de Tarefa Crítica (Concretagem / Escoramento)\nif (/concreta|laje|viga|slump|escoramento/i.test(text)) {\n  taskName = 'Concretagem de Vigas e Lajes';\n  isCritical = true;\n} else if (/reboco|gesso/i.test(text)) {\n  taskName = 'Reboco Interno Gesso';\n} else if (/alvenaria|bloco/i.test(text)) {\n  taskName = 'Alvenaria Estrutural';\n}\n\n// 4. Monta Payload Normalizado para o ConstruKore RDO\nreturn [{\n  json: {\n    whatsapp_message_id: input.whatsapp_message_id,\n    sender_phone: input.sender_phone,\n    sender_name: input.sender_name,\n    message_type: input.messageType,\n    raw_text: input.rawText,\n    transcription: input.text || input.rawText,\n    media_url: input.mediaUrl || (input.isImage ? 'https://images.unsplash.com/photo-1541888946425-d0fbb180c5f7' : undefined),\n    received_at: input.received_at,\n    detected_entities: {\n      wbs_task_name: taskName,\n      production_quantity: suggestedQuantity,\n      uom: suggestedUom,\n      occurrence_category: category === 'MATERIAL_SHORTAGE' ? 'material' : undefined,\n      is_critical_activity: isCritical,\n      material_shortage: materialShortage\n    }\n  }\n}];"
+      },
+      "id": "node-classify-entities",
+      "name": "Classificador de Obra & IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/diary/webhooks/whatsapp-inbound",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "node-send-to-construkore",
+      "name": "Enviar ao ConstruKore RDO (Webhook)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $json.instanceName }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.sender_phone }}\",\n  \"options\": {\n    \"delay\": 1200,\n    \"presence\": \"composing\"\n  },\n  \"textMessage\": {\n    \"text\": \"Recebido, {{ $json.sender_name.split(' ')[0] }}! Informação registrada no diário de obras para conferência da engenheira Mariana. Valeu!\"\n  }\n}",
+        "options": {}
+      },
+      "id": "node-evolution-send-reply",
+      "name": "Confirmar Recebimento no WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 11,16 * * 1-6"
+            }
+          ]
+        }
+      },
+      "id": "node-cron-scheduled-send",
+      "name": "Cron (11:30 & 16:30 Diário)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sorteio Aleatório de Variações de Perguntas (Biblioteca Natural)\nconst templates = [\n  'Boa tarde {nome}! Como está o andamento da {tarefa} no {local} hoje? Conseguiu fechar quantos {uom}?',\n  'Fala {nome}, beleza? Me passa o resumo de produção de {tarefa} no {local} para fecharmos o diário.',\n  'Olá {nome}, tudo certo? A equipe conseguiu bater a meta diária de {tarefa} no {local}? Quanto rendeu aproximadamente?',\n  'Opa {nome}! A equipe avançou bem em {tarefa} ({local})? Manda um áudio rápido com a metragem aproximada fechada hoje.',\n  '{nome}, fechamento de medição às 16:30: favor confirmar a produção de {tarefa} no {local} para o RDO.'\n];\n\nconst chosenTemplate = templates[Math.floor(Math.random() * templates.length)];\n\nreturn [{\n  json: {\n    template: chosenTemplate,\n    scheduled_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-select-random-variation",
+      "name": "Sortear Frase Natural da Biblioteca",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        580
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution API (Inbound)": {
+      "main": [
+        [
+          {
+            "node": "Filtrar & Normalizar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar & Normalizar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Router por Tipo de Mídia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router por Tipo de Mídia": {
+      "main": [
+        [
+          {
+            "node": "Transcrever Áudio com Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classificador de Obra & IA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Classificador de Obra & IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcrever Áudio com Whisper": {
+      "main": [
+        [
+          {
+            "node": "Classificador de Obra & IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classificador de Obra & IA": {
+      "main": [
+        [
+          {
+            "node": "Enviar ao ConstruKore RDO (Webhook)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar ao ConstruKore RDO (Webhook)": {
+      "main": [
+        [
+          {
+            "node": "Confirmar Recebimento no WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cron (11:30 & 16:30 Diário)": {
+      "main": [
+        [
+          {
+            "node": "Sortear Frase Natural da Biblioteca",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

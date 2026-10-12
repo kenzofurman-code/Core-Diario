@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-paper: var(--kore-paper);
+  --color-panel: var(--kore-panel);
+  --color-panel-subtle: var(--kore-panel-subtle);
+  --color-overlay: var(--kore-overlay);
+  --color-ink: var(--kore-ink);
+  --color-ink-secondary: var(--kore-ink-secondary);
+  --color-ink-muted: var(--kore-ink-muted);
+  --color-rule: var(--kore-rule);
+  --color-rule-subtle: var(--kore-rule-subtle);
+  --color-action: var(--kore-action);
+  --color-action-soft: var(--kore-action-soft);
+  --color-on-action: var(--kore-on-action);
+  --color-success: var(--kore-success);
+  --color-success-soft: var(--kore-success-soft);
+  --color-warning: var(--kore-warning);
+  --color-warning-soft: var(--kore-warning-soft);
+  --color-danger: var(--kore-danger);
+  --color-danger-soft: var(--kore-danger-soft);
+  --radius-field: var(--kore-radius-field);
+  --radius-card: var(--kore-radius-card);
+  --font-sans: 'IBM Plex Sans', Inter, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+:root {
+  --kore-paper: #F6F4EE;
+  --kore-panel: #FFFFFF;
+  --kore-panel-subtle: #F7F8F9;
+  --kore-overlay: rgb(16 24 32 / 0.52);
+  --kore-ink: #14171C;
+  --kore-ink-secondary: #484E58;
+  --kore-ink-muted: #7C828D;
+  --kore-on-action: #FFFFFF;
+  --kore-rule: #E0DDD3;
+  --kore-rule-subtle: #EEEBE3;
+  --kore-action: #1F4E9C;
+  --kore-action-soft: #E8EEF8;
+  --kore-success: #2E6B4C;
+  --kore-success-soft: #E6EFEA;
+  --kore-warning: #B4640F;
+  --kore-warning-soft: #FAEEE0;
+  --kore-danger: #A3271F;
+  --kore-danger-soft: #F8E7E4;
+  --kore-radius-field: 5px;
+  --kore-radius-card: 7px;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --kore-paper: #14161A;
+  --kore-panel: #22262C;
+  --kore-panel-subtle: #1E2127;
+  --kore-overlay: rgb(4 8 12 / 0.68);
+  --kore-ink: #E8E6E1;
+  --kore-ink-secondary: #B4B0A8;
+  --kore-ink-muted: #9B9891;
+  --kore-on-action: #14161A;
+  --kore-rule: #333840;
+  --kore-rule-subtle: #2A2E35;
+  --kore-action: #6699DD;
+  --kore-action-soft: #1A2434;
+  --kore-success: #4E9E75;
+  --kore-success-soft: #1B2C24;
+  --kore-warning: #D9913F;
+  --kore-warning-soft: #2E2418;
+  --kore-danger: #D96B5F;
+  --kore-danger-soft: #301E1C;
+  --kore-radius-field: 5px;
+  --kore-radius-card: 7px;
+}
+
+/* Custom scrollbars and transitions */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--kore-paper);
+  color: var(--kore-ink);
+}
+
+/* Touch active state for fast mobile tapping */
+button:active {
+  transform: scale(0.98);
+}

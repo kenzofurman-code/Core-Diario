@@ -1,0 +1,28 @@
+{
+  "name": "construkore-diario-rdo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "test": "node --test tests/slice1.test.mjs tests/full_phases.test.mjs tests/weather.test.mjs tests/share_and_dossier.test.mjs tests/whatsapp_inbound.test.mjs tests/engineering_and_short_term.test.mjs tests/contacts_and_templates.test.mjs tests/locations_and_r2.test.mjs tests/reports_history.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && vite build",
+    "verify": "tsc --noEmit && node --test tests/slice1.test.mjs tests/full_phases.test.mjs tests/weather.test.mjs tests/share_and_dossier.test.mjs tests/whatsapp_inbound.test.mjs tests/engineering_and_short_term.test.mjs tests/contacts_and_templates.test.mjs tests/locations_and_r2.test.mjs tests/reports_history.test.mjs && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
