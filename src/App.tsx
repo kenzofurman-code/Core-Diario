@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './shared/components/Header';
 import { DiaryStorageService, DiaryState, sampleUsers } from './modules/diary/services/diaryStorage';
 import { QuickCaptureBar } from './modules/diary/components/mobile/QuickCaptureBar';
@@ -23,7 +23,7 @@ import { ShortTermPlanningPanel } from './modules/diary/components/desktop/Short
 import { ContactsManagerPanel } from './modules/diary/components/desktop/ContactsManagerPanel';
 import { LocationsAndR2Panel } from './modules/diary/components/desktop/LocationsAndR2Panel';
 import { ReportsHistoryPanel } from './modules/diary/components/desktop/ReportsHistoryPanel';
-import { PrevisionArchiveViewerPanel } from './modules/diary/components/desktop/PrevisionArchiveViewerPanel';
+import { PrevisionDiarioService } from './modules/diary/services/previsionDiarioService';
 import { AuthScreen } from './modules/auth/AuthScreen';
 import {
   SourceConflict,
@@ -42,6 +42,7 @@ import {
   R2StorageConfig,
   UserContext,
   DailyReportSummaryItem,
+  ProjectContext,
 } from './modules/diary/types/diary.types';
 import {
   Calendar,
@@ -91,6 +92,59 @@ export const App: React.FC = () => {
   const [pendingTargetView, setPendingTargetView] = useState<'ENGENHARIA' | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinModalError, setPinModalError] = useState<string | null>(null);
+
+  // Lista de todas as 16 obras da empresa (Prevision VPS)
+  const [availableProjects, setAvailableProjects] = useState<ProjectContext[]>(() =>
+    PrevisionDiarioService.getAllObrasAsProjects()
+  );
+
+  // Sincroniza dinamicamente as obras reais disponíveis na VPS
+  useEffect(() => {
+    PrevisionDiarioService.fetchObras().then((obras) => {
+      if (obras && obras.length > 0) {
+        const projects = obras.map((o) => PrevisionDiarioService.obraToProject(o));
+        setAvailableProjects(projects);
+      }
+    });
+  }, []);
+
+  const handleSelectProject = (project: ProjectContext) => {
+    const state = DiaryStorageService.switchProject(project);
+    setDiaryState({ ...state });
+  };
+
+  // Carregamento dinâmico dos relatórios da obra ativa
+  const [obraReports, setObraReports] = useState<DailyReportSummaryItem[]>([]);
+  const [isLoadingReports, setIsLoadingReports] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingReports(true);
+    PrevisionDiarioService.fetchRelatorios({ obraId: diaryState.project.id, limit: 150 })
+      .then((res) => {
+        if (!isMounted) return;
+        if (res && res.records && res.records.length > 0) {
+          const mapped = res.records.map((r) =>
+            PrevisionDiarioService.previsionItemToSummaryItem(
+              r,
+              diaryState.project.codigo,
+              r.data === diaryState.reportingDay.report_date
+            )
+          );
+          setObraReports(mapped);
+        } else {
+          setObraReports([]);
+        }
+      })
+      .catch((err) => console.warn('[App] Falha ao carregar relatórios da obra:', err))
+      .finally(() => {
+        if (isMounted) setIsLoadingReports(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [diaryState.project.id, diaryState.reportingDay.report_date]);
 
   // Auto-login instantâneo via link do WhatsApp / Magic Link (?u=usr-02 ou ?user=encarregado)
   useEffect(() => {
@@ -325,7 +379,32 @@ export const App: React.FC = () => {
   };
 
   // Handlers de Histórico & Calendário de RDOs Anteriores
-  const handleSwitchReportingDay = (targetDate: string) => {
+  const handleSwitchReportingDay = async (targetDate: string, reportId?: string) => {
+    if (targetDate === diaryState.reportingDay.report_date) {
+      return;
+    }
+
+    // Se tiver reportId (RDO da VPS), busca o detalhe completo e mapeia nativamente
+    if (reportId) {
+      try {
+        const detalhe = await PrevisionDiarioService.fetchDetalheRelatorio(reportId);
+        if (detalhe) {
+          const state = PrevisionDiarioService.mapearDetalheParaDiaryState(
+            detalhe,
+            diaryState,
+            diaryState.project
+          );
+          DiaryStorageService.saveDayToArchive(state);
+          DiaryStorageService.saveState(state);
+          setDiaryState({ ...state });
+          return;
+        }
+      } catch (err) {
+        console.warn('[App] Falha ao carregar detalhe remoto do relatório:', err);
+      }
+    }
+
+    // Fallback: alterna dia via arquivo local
     const state = DiaryStorageService.switchReportingDay(targetDate);
     setDiaryState({ ...state });
   };
@@ -455,8 +534,14 @@ export const App: React.FC = () => {
     return dateStr;
   };
 
-  // Lista de resumos e navegação entre datas
-  const reportsSummaries = DiaryStorageService.listDailyReportsSummaries();
+  // Lista de resumos e navegação entre datas (combina diários da obra na VPS e edições locais)
+  const reportsSummaries = useMemo(() => {
+    const localList = DiaryStorageService.listDailyReportsSummaries();
+    const map = new Map<string, DailyReportSummaryItem>();
+    obraReports.forEach((r) => map.set(r.date, r));
+    localList.forEach((r) => map.set(r.date, r));
+    return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }, [obraReports, diaryState.reportingDay.report_date]);
   const currentDateIndex = reportsSummaries.findIndex((r) => r.date === diaryState.dailyReport.report_date);
   const prevDate = currentDateIndex >= 0 && currentDateIndex < reportsSummaries.length - 1
     ? reportsSummaries[currentDateIndex + 1].date
@@ -646,7 +731,14 @@ export const App: React.FC = () => {
   };
 
   if (!isAuthenticated) {
-    return <AuthScreen project={diaryState.project} onLogin={handleLogin} />;
+    return (
+      <AuthScreen
+        project={diaryState.project}
+        availableProjects={availableProjects}
+        onSelectProject={handleSelectProject}
+        onLogin={handleLogin}
+      />
+    );
   }
 
   return (
@@ -657,6 +749,8 @@ export const App: React.FC = () => {
         currentUser={diaryState.currentUser}
         currentView={currentView}
         isDarkMode={isDarkMode}
+        availableProjects={availableProjects}
+        onSelectProject={handleSelectProject}
         onToggleView={(v) => handleRequestToggleView(v)}
         onToggleTheme={() => setIsDarkMode(!isDarkMode)}
         onSelectUser={(u) => {
@@ -818,7 +912,6 @@ export const App: React.FC = () => {
                 <h2 className="text-base font-bold text-ink">
                   {engineeringSection === 'OVERVIEW' && 'Visão Geral & Governança do RDO'}
                   {engineeringSection === 'REPORTS_HISTORY' && 'Histórico de RDOs, Dias Anteriores & Arquivo'}
-                  {engineeringSection === 'PREVISION_ARCHIVE' && 'Acervo de Diários Prevision (16 Obras na VPS & 2.198 RDOs)'}
                   {engineeringSection === 'WORKFORCE' && 'Gestão & Edição do Efetivo de Obra'}
                   {engineeringSection === 'PRODUCTION' && 'Apontamento & Avanço Físico Diário'}
                   {engineeringSection === 'SHORT_TERM_PLANNING' && 'Curto Prazo — Planejamento Semanal (LPS)'}
@@ -1010,31 +1103,20 @@ export const App: React.FC = () => {
                   project={diaryState.project}
                   reportsList={reportsSummaries}
                   activeDate={diaryState.dailyReport.report_date}
-                  onSelectDate={(date) => {
-                    handleSwitchReportingDay(date);
+                  onSelectDate={(date, reportId) => {
+                    handleSwitchReportingDay(date, reportId);
                     setEngineeringSection('OVERVIEW');
                   }}
                   onCreateNewDay={handleCreateNewReportingDay}
                   onDeleteDraftDay={handleDeleteDraftDay}
-                  onOpenDocumentView={(date) => {
-                    handleSwitchReportingDay(date);
+                  onOpenDocumentView={(date, reportId) => {
+                    handleSwitchReportingDay(date, reportId);
                     setIsDocumentViewOpen(true);
                   }}
-                  onOpenPhotoDossier={(date) => {
-                    handleSwitchReportingDay(date);
+                  onOpenPhotoDossier={(date, reportId) => {
+                    handleSwitchReportingDay(date, reportId);
                     setIsPhotoDossierOpen(true);
                   }}
-                />
-              </div>
-            )}
-
-            {/* SEÇÃO: ACERVO PREVISION (16 OBRAS NA VPS) */}
-            {engineeringSection === 'PREVISION_ARCHIVE' && (
-              <div className="animate-in fade-in duration-200">
-                <PrevisionArchiveViewerPanel
-                  diaryState={diaryState}
-                  onUpdateState={handleStateUpdate}
-                  onNavigateToSection={(sec) => setEngineeringSection(sec)}
                 />
               </div>
             )}

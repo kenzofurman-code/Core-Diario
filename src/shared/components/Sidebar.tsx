@@ -68,14 +68,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badgeColor: 'bg-warning text-slate-950 font-bold',
     },
     {
-      id: 'PREVISION_ARCHIVE',
-      label: 'Acervo Prevision',
-      sublabel: '16 Obras & 2.198 RDOs',
-      icon: <Database className="w-4 h-4 shrink-0" />,
-      badgeCount: 16,
-      badgeColor: 'bg-blue-600 text-white font-bold',
-    },
-    {
       id: 'WORKFORCE',
       label: 'Efetivo de Obra',
       sublabel: 'Próprios & Terceiros',

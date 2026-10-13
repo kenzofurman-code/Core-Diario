@@ -7,7 +7,21 @@ import {
   WorkforceRoleCount,
   ProductionEntry,
   SourceEvent,
+  ProjectContext,
+  DailyReportSummaryItem,
+  ReportingDay,
+  DailyReport,
+  WeatherObservation,
+  DayWeatherSummary,
+  WeatherCondition,
+  WorkabilityStatus,
+  OperationalOccurrence,
+  ReportingDayState,
+  RdoState,
+  ReportVersion,
+  WorkforceSnapshot,
 } from '../types/diary.types';
+import type { DiaryState } from './diaryStorage';
 
 export interface PrevisionObra {
   obra_id: string;
@@ -296,6 +310,320 @@ export class PrevisionDiarioService {
       { obra_id: '69e2785f9240e49fbb04a2c4', nome: 'Ristreto', status: 'Em Andamento', relatorios: 132, primeira_data: '2026-04-01', ultima_data: '2026-10-09', total_fotos: 158 },
       { obra_id: '6a04742d467e62c514033722', nome: 'Grand Lodge Batel', status: 'Em Andamento', relatorios: 111, primeira_data: '2026-05-11', ultima_data: '2026-10-09', total_fotos: 1527 },
       { obra_id: '690d0627b14da95f9e04cfc2', nome: 'PACE | AG7', status: 'Em Andamento', relatorios: 45, primeira_data: '2026-08-10', ultima_data: '2026-10-08', total_fotos: 875 },
+      { obra_id: '69b2b1782e7e4e427e07f4c2', nome: 'Teste - Planejamento', status: 'Não Iniciada', relatorios: 1, primeira_data: '2026-03-13', ultima_data: '2026-03-13', total_fotos: 0 },
+      { obra_id: '691742509479cd8ead0ac8b3', nome: 'Croma', status: 'Concluída', relatorios: 0, primeira_data: null, ultima_data: null, total_fotos: 0 },
+      { obra_id: '69176d6c24397d7da60e4c8f', nome: 'Unna', status: 'Concluída', relatorios: 0, primeira_data: null, ultima_data: null, total_fotos: 0 },
     ];
+  }
+
+  /**
+   * Converte uma PrevisionObra no modelo de ProjectContext do Core Diário
+   */
+  public static obraToProject(obra: PrevisionObra): ProjectContext {
+    const rawCodigo = obra.nome.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const codigo = rawCodigo.length >= 3 ? rawCodigo.slice(0, 4) : 'OBRA';
+    return {
+      id: obra.obra_id,
+      codigo,
+      nome: obra.nome,
+      cidade: 'Curitiba, PR',
+      timezone: 'America/Sao_Paulo',
+      gps_lat: -25.4284,
+      gps_lng: -49.2733,
+      rain_contractual_threshold_mm: 5.0,
+      nearest_inmet_station_code: 'A807',
+      nearest_inmet_station_name: 'Estação Oficial INMET A807 (Curitiba - PR)',
+    };
+  }
+
+  /**
+   * Retorna a lista completa de todas as 16 obras reais como projetos do Core Diário
+   */
+  public static getAllObrasAsProjects(): ProjectContext[] {
+    return this.getFallbackObras().map((obra) => this.obraToProject(obra));
+  }
+
+  /**
+   * Converte um item da lista do Prevision para o modelo de resumo do Core Diário
+   */
+  public static previsionItemToSummaryItem(
+    item: PrevisionRelatorioListItem,
+    projectCodigo: string,
+    isCurrentActive: boolean = false
+  ): DailyReportSummaryItem {
+    const parts = item.data.split('-');
+    let formattedDate = item.data;
+    let weekday = item.dia_semana || 'Dia Útil';
+    if (parts.length === 3) {
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      formattedDate = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+
+    const isApproved =
+      item.status?.toLowerCase().includes('aprovado') ||
+      item.status?.toLowerCase().includes('conclu') ||
+      item.status?.toLowerCase().includes('finalizado');
+    const workflowState = isApproved ? 'ISSUED' : 'DRAFT';
+
+    const cond = item.clima_manha || item.condicao_manha || 'BOM_TEMPO';
+
+    return {
+      date: item.data,
+      formatted_date: formattedDate,
+      weekday,
+      report_id: item.relatorio_id,
+      report_number: item.numero,
+      formatted_number: `${projectCodigo}-RDO-${String(item.numero).padStart(4, '0')}`,
+      workflow_state: workflowState,
+      total_workers: 0,
+      production_progress_pct: 0,
+      photos_count: item.total_fotos || 0,
+      occurrences_count: 0,
+      conflicts_count: 0,
+      weather_condition: cond,
+      is_contractual_rain_day: Boolean(item.dia_chuvoso || item.dia_impraticavel),
+      responsible_engineer_name: item.criado_por || 'Responsável Técnico',
+      has_blocking_issues: false,
+      is_current_active: isCurrentActive,
+    };
+  }
+
+  /**
+   * Converte um detalhe integral de RDO histórico do Prevision para um DiaryState nativo do Core Diário
+   */
+  public static mapearDetalheParaDiaryState(
+    detalhe: PrevisionRelatorioDetalhe,
+    baseState: DiaryState,
+    project: ProjectContext
+  ): DiaryState {
+    const rel = detalhe.relatorio;
+    const isApproved =
+      rel.status?.toLowerCase().includes('aprovado') ||
+      rel.status?.toLowerCase().includes('conclu') ||
+      rel.status?.toLowerCase().includes('finalizado');
+
+    const reportingDayState: ReportingDayState = isApproved ? 'CLOSED' : 'OPEN';
+    const rdoWorkflowState: RdoState = isApproved ? 'ISSUED' : 'DRAFT';
+    const reportNumber = rel.numero || 1;
+    const formattedNumber = `${project.codigo}-RDO-${String(reportNumber).padStart(4, '0')}`;
+    const reportingDayId = `rep-day-${rel.data}`;
+
+    const parseCondicao = (c?: string | null): WeatherCondition => {
+      const s = (c || '').toUpperCase();
+      if (s.includes('CHUVA') || s.includes('CHUV')) return 'CHUVA_MODERADA';
+      if (s.includes('TEMPESTADE')) return 'TEMPESTADE';
+      if (s.includes('NUBLADO')) return 'NUBLADO';
+      return 'ENSOLARADO';
+    };
+
+    const parseWorkability = (c?: string | null): WorkabilityStatus => {
+      const s = (c || '').toUpperCase();
+      if (s.includes('IMPRATIC')) return 'IMPRATICAVEL';
+      if (s.includes('PARCIAL')) return 'PARCIALMENTE_PRATICAVEL';
+      return 'PRATICAVEL';
+    };
+
+    const precipitationNum = Number(rel.indice_pluviometrico) || (rel.dia_chuvoso ? 8.0 : 0);
+    const isContractualRain = Boolean(rel.dia_chuvoso || rel.dia_impraticavel || precipitationNum >= 5.0);
+
+    const reportingDay: ReportingDay = {
+      id: reportingDayId,
+      tenant_id: project.id,
+      project_id: project.id,
+      report_date: rel.data,
+      shift_name: 'Turno Integral (07:00 às 17:00)',
+      workflow_state: reportingDayState,
+      responsible_user_id: baseState.currentUser?.id || 'usr-03',
+      responsible_user_name: rel.criado_por || rel.modificado_por || 'Responsável Técnico',
+      completion_percentage: isApproved ? 100 : 70,
+      data_quality_score: 95,
+      opened_at: rel.criado_em || `${rel.data}T07:00:00-03:00`,
+      closed_at: isApproved ? (rel.modificado_em || `${rel.data}T18:00:00-03:00`) : undefined,
+      status: 'active',
+      created_at: rel.criado_em || `${rel.data}T07:00:00-03:00`,
+      updated_at: rel.modificado_em || `${rel.data}T17:00:00-03:00`,
+    };
+
+    const dailyReport: DailyReport = {
+      id: `rdo-${project.codigo.toLowerCase()}-${String(reportNumber).padStart(4, '0')}`,
+      tenant_id: project.id,
+      project_id: project.id,
+      reporting_day_id: reportingDay.id,
+      report_number: reportNumber,
+      formatted_number: formattedNumber,
+      report_date: rel.data,
+      workflow_state: rdoWorkflowState,
+      current_version_number: 1,
+      responsible_engineer_name: rel.criado_por || rel.modificado_por || 'Responsável Técnico',
+      submitted_at: `${rel.data}T17:00:00-03:00`,
+      approved_at: isApproved ? `${rel.data}T18:00:00-03:00` : undefined,
+      issued_at: isApproved ? `${rel.data}T18:00:00-03:00` : undefined,
+    };
+
+    const workforceEntries = this.mapearMaoObra(detalhe.maoObra || []);
+    const totalWorkers = workforceEntries.reduce((acc, w) => acc + w.count, 0);
+
+    const productionEntries = this.mapearAtividades(detalhe.atividades || [], reportingDay.id);
+    const sourceEvents = this.mapearFotos(detalhe.fotos || [], reportingDay.id, rel.data);
+
+    const weatherObservations: WeatherObservation[] = [
+      {
+        shift: 'MANHA',
+        condition: parseCondicao(rel.clima_manha),
+        impact: rel.condicao_manha?.toUpperCase().includes('IMPRAT') ? 'PARALISACAO_TOTAL' : 'SEM_IMPACTO',
+        notes: `Condição de campo: ${rel.condicao_manha || 'Praticável'}`,
+      },
+      {
+        shift: 'TARDE',
+        condition: parseCondicao(rel.clima_tarde),
+        impact: rel.condicao_tarde?.toUpperCase().includes('IMPRAT') ? 'PARALISACAO_TOTAL' : 'SEM_IMPACTO',
+        notes: `Condição de campo: ${rel.condicao_tarde || 'Praticável'}`,
+      },
+    ];
+
+    const weatherSummary: DayWeatherSummary = {
+      station_source: 'Estação Meteorológica Local / INMET',
+      inmet_reference: project.nearest_inmet_station_name || 'Estação Oficial INMET A807',
+      queried_at: `${rel.data}T17:30:00-03:00`,
+      total_precipitation_day_mm: precipitationNum,
+      max_wind_speed_kmh: 15,
+      temperature_min_c: 16,
+      temperature_max_c: 24,
+      rain_threshold_mm: 5.0,
+      is_contractual_rain_day: isContractualRain,
+      has_nr18_wind_alert: false,
+      shifts: [
+        {
+          shift: 'MANHA',
+          period_label: '07:00 às 12:00',
+          condition: parseCondicao(rel.clima_manha),
+          temperature_avg_c: 21,
+          precipitation_mm: precipitationNum / 2,
+          wind_speed_max_kmh: 12,
+          humidity_pct: 75,
+          workability: parseWorkability(rel.condicao_manha),
+          hours_lost_to_weather: rel.condicao_manha?.toUpperCase().includes('IMPRAT') ? 4 : 0,
+          is_overridden: false,
+        },
+        {
+          shift: 'TARDE',
+          period_label: '13:00 às 17:00',
+          condition: parseCondicao(rel.clima_tarde),
+          temperature_avg_c: 23,
+          precipitation_mm: precipitationNum / 2,
+          wind_speed_max_kmh: 15,
+          humidity_pct: 78,
+          workability: parseWorkability(rel.condicao_tarde),
+          hours_lost_to_weather: rel.condicao_tarde?.toUpperCase().includes('IMPRAT') ? 4 : 0,
+          is_overridden: false,
+        },
+        {
+          shift: 'NOITE',
+          period_label: '18:00 às 22:00',
+          condition: parseCondicao(rel.clima_noite),
+          temperature_avg_c: 18,
+          precipitation_mm: 0,
+          wind_speed_max_kmh: 10,
+          humidity_pct: 80,
+          workability: parseWorkability(rel.condicao_noite),
+          hours_lost_to_weather: 0,
+          is_overridden: false,
+        },
+      ],
+    };
+
+    const occurrences: OperationalOccurrence[] = (detalhe.ocorrencias || []).map((oc, i) => ({
+      id: `prev-occ-${i + 1}`,
+      reporting_day_id: reportingDay.id,
+      code: `OCC-${String(i + 1).padStart(3, '0')}`,
+      title: oc.descricao.length > 50 ? oc.descricao.substring(0, 47) + '...' : oc.descricao,
+      description: oc.descricao,
+      category: oc.paralisacao ? 'weather' : 'planning',
+      severity: oc.paralisacao ? 'high' : 'medium',
+      occurred_at: `${rel.data}T10:00:00-03:00`,
+      approved_for_rdo: true,
+      status: 'RESOLVED',
+    }));
+
+    const workflowSteps = baseState.workflow?.steps
+      ? baseState.workflow.steps.map((st) => ({
+          ...st,
+          status: isApproved ? ('APPROVED' as const) : st.status,
+          approved_at: isApproved ? `${rel.data}T18:00:00-03:00` : st.approved_at,
+          approver_name: rel.criado_por || st.approver_name,
+        }))
+      : [];
+
+    const versions: ReportVersion[] = isApproved
+      ? [
+          {
+            id: `ver-${dailyReport.id}-1`,
+            daily_report_id: dailyReport.id,
+            version_number: 1,
+            created_at: rel.modificado_em || `${rel.data}T18:00:00-03:00`,
+            created_by: rel.criado_por || 'Engenharia Residente',
+            document_hash: `hash-sha256-rdo-${rel.relatorio_id.slice(-8)}`,
+            snapshot_json: {
+              report_id: dailyReport.id,
+              report_number: dailyReport.formatted_number,
+              report_date: dailyReport.report_date,
+              project,
+              responsible_engineer: dailyReport.responsible_engineer_name,
+              issued_at: `${rel.data}T18:00:00-03:00`,
+              weather: weatherObservations,
+              weather_summary: weatherSummary,
+              workforce: {
+                id: `wf-snap-${reportingDay.id}`,
+                reporting_day_id: reportingDay.id,
+                captured_at: `${rel.data}T07:15:00-03:00`,
+                total_workers: totalWorkers,
+                entries: workforceEntries,
+                copied_from_yesterday: false,
+              },
+              production: productionEntries,
+              occurrences,
+              conflicts: [],
+              supply_tickets: [],
+              photo_evidences: sourceEvents.map((e) => ({
+                url: e.media_url || '',
+                caption: e.raw_text,
+                location: e.location_name || 'Canteiro Geral',
+                timestamp: e.occurred_at,
+                author: e.author_name,
+              })),
+              workflow_signatures: workflowSteps,
+              general_notes: `Relatório Diário de Obra importado da base operacional. Status: ${rel.status}`,
+            },
+          },
+        ]
+      : [];
+
+    return {
+      ...baseState,
+      project,
+      reportingDay,
+      dailyReport,
+      workforceSnapshot: {
+        id: `wf-snap-${reportingDay.id}`,
+        reporting_day_id: reportingDay.id,
+        captured_at: `${rel.data}T07:15:00-03:00`,
+        total_workers: totalWorkers,
+        entries: workforceEntries,
+        copied_from_yesterday: false,
+      },
+      productionEntries,
+      sourceEvents,
+      weather: weatherObservations,
+      weatherSummary,
+      occurrences,
+      workflow: {
+        id: `wf-${project.codigo.toLowerCase()}-${rel.numero || 1}`,
+        project_id: project.id,
+        current_step_number: isApproved ? 4 : 2,
+        steps: workflowSteps,
+      },
+      versions,
+      generalNotes: `Relatório Diário de Obra ${formattedNumber} da obra ${project.nome}. Responsável: ${rel.criado_por || 'Engenharia'}.`,
+    };
   }
 }

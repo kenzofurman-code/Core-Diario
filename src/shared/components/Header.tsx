@@ -1,5 +1,5 @@
 import React from 'react';
-import { Smartphone, Monitor, Sun, Moon, RotateCcw, Wifi, WifiOff, HardHat, Shield, LogOut } from 'lucide-react';
+import { Smartphone, Monitor, Sun, Moon, RotateCcw, Wifi, WifiOff, HardHat, Shield, LogOut, Building2 } from 'lucide-react';
 import { UserContext, ProjectContext } from '../../modules/diary/types/diary.types';
 import { sampleUsers } from '../../modules/diary/services/diaryStorage';
 
@@ -8,6 +8,8 @@ interface HeaderProps {
   currentUser: UserContext;
   currentView: 'CANTEIRO' | 'ENGENHARIA';
   isDarkMode: boolean;
+  availableProjects?: ProjectContext[];
+  onSelectProject?: (project: ProjectContext) => void;
   onToggleView: (view: 'CANTEIRO' | 'ENGENHARIA') => void;
   onToggleTheme: () => void;
   onSelectUser: (user: UserContext) => void;
@@ -20,6 +22,8 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   currentView,
   isDarkMode,
+  availableProjects = [],
+  onSelectProject,
   onToggleView,
   onToggleTheme,
   onSelectUser,
@@ -42,9 +46,30 @@ export const Header: React.FC<HeaderProps> = ({
                   RDO
                 </span>
               </div>
-              <p className="text-[11px] text-ink-secondary mt-0.5">
-                {project.nome} <span className="text-ink-muted">({project.codigo})</span>
-              </p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <Building2 className="w-3.5 h-3.5 text-action shrink-0" />
+                {availableProjects.length > 0 && onSelectProject ? (
+                  <select
+                    value={project.id}
+                    onChange={(e) => {
+                      const found = availableProjects.find((p) => p.id === e.target.value);
+                      if (found) onSelectProject(found);
+                    }}
+                    className="bg-transparent text-[11px] font-semibold text-ink focus:outline-none cursor-pointer border-b border-dashed border-rule hover:border-action transition-colors max-w-[200px] truncate"
+                    title="Alternar entre as obras cadastradas"
+                  >
+                    {availableProjects.map((p) => (
+                      <option key={p.id} value={p.id} className="bg-panel text-ink">
+                        {p.nome} ({p.codigo})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-[11px] text-ink-secondary">
+                    {project.nome} <span className="text-ink-muted">({project.codigo})</span>
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

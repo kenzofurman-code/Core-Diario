@@ -31,11 +31,11 @@ interface ReportsHistoryPanelProps {
   project: ProjectContext;
   reportsList: DailyReportSummaryItem[];
   activeDate: string;
-  onSelectDate: (date: string) => void;
+  onSelectDate: (date: string, reportId?: string) => void;
   onCreateNewDay: (targetDate: string, copyYesterdayWorkforce: boolean) => void;
   onDeleteDraftDay?: (targetDate: string) => void;
-  onOpenDocumentView: (date: string) => void;
-  onOpenPhotoDossier: (date: string) => void;
+  onOpenDocumentView: (date: string, reportId?: string) => void;
+  onOpenPhotoDossier: (date: string, reportId?: string) => void;
 }
 
 export const ReportsHistoryPanel: React.FC<ReportsHistoryPanelProps> = ({
@@ -350,11 +350,11 @@ export const ReportsHistoryPanel: React.FC<ReportsHistoryPanelProps> = ({
 
                 {/* Botões de Ação para o Dia */}
                 <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 lg:pt-0">
-                  {/* Se for Rascunho / Em Aberto: Botão Primário "Abrir para Editar" */}
+                  {/* Sefor Rascunho / Em Aberto: Botão Primário "Abrir para Editar" */}
                   {!isIssued ? (
                     <button
                       type="button"
-                      onClick={() => onSelectDate(item.date)}
+                      onClick={() => onSelectDate(item.date, item.report_id)}
                       className={`px-3.5 py-2 rounded-field text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs active:scale-95 ${
                         isActive
                           ? 'bg-action text-white hover:bg-action/90'
@@ -369,7 +369,7 @@ export const ReportsHistoryPanel: React.FC<ReportsHistoryPanelProps> = ({
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => onOpenDocumentView(item.date)}
+                        onClick={() => onOpenDocumentView(item.date, item.report_id)}
                         className="px-3 py-1.5 rounded-field bg-paper border border-rule hover:border-action text-ink text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
                         title="Visualizar RDO Oficial A4 emitido"
                       >
@@ -379,7 +379,7 @@ export const ReportsHistoryPanel: React.FC<ReportsHistoryPanelProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => onOpenPhotoDossier(item.date)}
+                        onClick={() => onOpenPhotoDossier(item.date, item.report_id)}
                         className="px-3 py-1.5 rounded-field bg-paper border border-rule hover:border-action text-ink text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs"
                         title="Visualizar Caderno Fotográfico Pericial"
                       >
@@ -390,7 +390,7 @@ export const ReportsHistoryPanel: React.FC<ReportsHistoryPanelProps> = ({
                       {!isActive && (
                         <button
                           type="button"
-                          onClick={() => onSelectDate(item.date)}
+                          onClick={() => onSelectDate(item.date, item.report_id)}
                           className="px-3 py-1.5 rounded-field bg-paper-subtle text-ink-muted hover:text-ink text-xs font-semibold transition-colors"
                           title="Carregar no painel para consulta"
                         >

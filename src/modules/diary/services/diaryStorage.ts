@@ -1239,6 +1239,67 @@ export class DiaryStorageService {
   }
 
   /**
+   * Salva um dia específico no arquivo persistente de diários
+   */
+  public static saveDayToArchive(targetState: DiaryState): void {
+    const archive = this.loadArchive();
+    archive[targetState.reportingDay.report_date] = targetState;
+    this.saveArchive(archive);
+  }
+
+  /**
+   * Alterna a obra ativa da aplicação para uma das 16 obras cadastradas
+   */
+  public static switchProject(newProject: ProjectContext): DiaryState {
+    const currentState = this.loadState();
+    if (currentState.project?.id === newProject.id) {
+      return currentState;
+    }
+
+    // Salva o dia atual da obra anterior no arquivo
+    const currentArchive = this.loadArchive();
+    currentArchive[currentState.reportingDay.report_date] = currentState;
+    this.saveArchive(currentArchive);
+
+    // Tenta carregar o arquivo ou estado já existente para a nova obra
+    const projectArchiveKey = `construkore_diary_archive_${newProject.id}`;
+    const rawProjectArchive = localStorage.getItem(projectArchiveKey);
+    if (rawProjectArchive) {
+      try {
+        const parsed = JSON.parse(rawProjectArchive);
+        const dates = Object.keys(parsed).sort((a, b) => b.localeCompare(a));
+        if (dates.length > 0) {
+          const targetState = parsed[dates[0]];
+          targetState.project = newProject;
+          this.saveState(targetState);
+          return targetState;
+        }
+      } catch (e) {
+        console.error('Falha ao restaurar arquivo da obra:', e);
+      }
+    }
+
+    // Caso não haja diários salvos localmente para a nova obra, instancia um novo estado base para ela
+    const nextState: DiaryState = {
+      ...JSON.parse(JSON.stringify(currentState)),
+      project: newProject,
+      dailyReport: {
+        ...currentState.dailyReport,
+        id: `rdo-${newProject.codigo.toLowerCase()}-0001`,
+        project_id: newProject.id,
+        formatted_number: `${newProject.codigo}-RDO-0001`,
+        report_number: 1,
+      },
+      reportingDay: {
+        ...currentState.reportingDay,
+        project_id: newProject.id,
+      },
+    };
+    this.saveState(nextState);
+    return nextState;
+  }
+
+  /**
    * Alterna o dia ativo da aplicação para uma data retroativa ou futura
    */
   public static switchReportingDay(targetDate: string): DiaryState {

@@ -22,10 +22,17 @@ import { sampleUsers } from '../diary/services/diaryStorage';
 
 interface AuthScreenProps {
   project: ProjectContext;
+  availableProjects?: ProjectContext[];
+  onSelectProject?: (project: ProjectContext) => void;
   onLogin: (user: UserContext, preferredView: 'CANTEIRO' | 'ENGENHARIA') => void;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ project, onLogin }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({
+  project,
+  availableProjects = [],
+  onSelectProject,
+  onLogin,
+}) => {
   const [selectedUser, setSelectedUser] = useState<UserContext>(sampleUsers[1]); // Default: Antônio Santos (Encarregado)
   const [rememberMe, setRememberMe] = useState(true);
   
@@ -89,15 +96,71 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ project, onLogin }) => {
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 bg-slate-800/60 px-3 py-1.5 rounded-full border border-slate-700/60">
-          <Building2 className="w-3.5 h-3.5 text-amber-400" />
-          <span>{project.nome}</span>
-          <span className="font-mono text-slate-500">({project.codigo})</span>
+        {/* Seletor de Obra no Topo */}
+        <div className="flex items-center gap-2 text-xs bg-slate-800/80 px-3 py-1.5 rounded-full border border-slate-700/80">
+          <Building2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          {availableProjects.length > 0 && onSelectProject ? (
+            <select
+              value={project.id}
+              onChange={(e) => {
+                const found = availableProjects.find((p) => p.id === e.target.value);
+                if (found) onSelectProject(found);
+              }}
+              className="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-1"
+              title="Selecionar a obra ativa"
+            >
+              {availableProjects.map((p) => (
+                <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                  {p.nome} ({p.codigo})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <>
+              <span className="font-semibold text-white">{project.nome}</span>
+              <span className="font-mono text-slate-400">({project.codigo})</span>
+            </>
+          )}
         </div>
       </header>
 
       {/* Container Central de Login */}
       <main className="flex-1 max-w-xl w-full mx-auto p-4 sm:p-6 flex flex-col justify-center my-6 space-y-6">
+        {/* Banner de Obra Ativa */}
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-4 shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Obra Selecionada
+              </span>
+              <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                {project.nome}
+                <span className="text-xs font-mono text-amber-400 font-semibold">({project.codigo})</span>
+              </h3>
+            </div>
+          </div>
+
+          {availableProjects.length > 0 && onSelectProject && (
+            <select
+              value={project.id}
+              onChange={(e) => {
+                const found = availableProjects.find((p) => p.id === e.target.value);
+                if (found) onSelectProject(found);
+              }}
+              className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-200 focus:outline-none focus:border-amber-500 cursor-pointer"
+            >
+              {availableProjects.map((p) => (
+                <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                  Trocar para: {p.nome}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold mb-1">
             <Zap className="w-3.5 h-3.5" />
