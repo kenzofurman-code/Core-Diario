@@ -60,6 +60,8 @@ export interface PrevisionRelatorioListItem {
   dia_impraticavel: boolean;
   dia_parado: boolean;
   total_fotos: number;
+  total_trabalhadores?: number;
+  total_atividades?: number;
   criado_por: string | null;
   link_pdf: string | null;
 }
@@ -379,8 +381,8 @@ export class PrevisionDiarioService {
       report_number: item.numero,
       formatted_number: `${projectCodigo}-RDO-${String(item.numero).padStart(4, '0')}`,
       workflow_state: workflowState,
-      total_workers: 0,
-      production_progress_pct: 0,
+      total_workers: Number(item.total_trabalhadores) || 0,
+      production_progress_pct: Number(item.total_atividades) ? Math.min(100, Number(item.total_atividades) * 10) : 0,
       photos_count: item.total_fotos || 0,
       occurrences_count: 0,
       conflicts_count: 0,

@@ -961,6 +961,9 @@ export class DiaryStorageService {
         if (!parsed.r2Config) {
           parsed.r2Config = initialR2Config;
         }
+        if (parsed.workforceSnapshot?.entries) {
+          parsed.workforceSnapshot.total_workers = parsed.workforceSnapshot.entries.reduce((acc: number, c: any) => acc + (Number(c.count) || 0), 0);
+        }
         return parsed;
       } catch (e) {
         console.error('Falha ao restaurar estado do RDO:', e);

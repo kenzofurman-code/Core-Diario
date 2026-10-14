@@ -575,6 +575,14 @@ export const App: React.FC = () => {
     ? reportsSummaries[currentDateIndex - 1].date
     : undefined;
 
+  // Soma matemática em tempo real do efetivo total presente hoje no canteiro
+  const currentTotalWorkers = useMemo(() => {
+    return (diaryState.workforceSnapshot?.entries || []).reduce(
+      (acc, curr) => acc + (Number(curr.count) || 0),
+      0
+    );
+  }, [diaryState.workforceSnapshot?.entries]);
+
   // Banner de Estado do Dia e Ações Globais
   const renderDayBanner = () => {
     const isIssued = diaryState.dailyReport.workflow_state === 'ISSUED';
@@ -971,7 +979,7 @@ export const App: React.FC = () => {
                     </span>
                     <div className="flex items-center justify-between">
                       <span className="text-xl font-mono font-bold text-ink">
-                        {diaryState.workforceSnapshot.total_workers}
+                        {currentTotalWorkers}
                       </span>
                       <Users className="w-5 h-5 text-action" />
                     </div>
@@ -1063,7 +1071,7 @@ export const App: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <h3 className="text-xs font-bold text-ink uppercase flex items-center gap-2">
                         <Users className="w-4 h-4 text-action" />
-                        Efetivo em Campo ({diaryState.workforceSnapshot.total_workers} operários)
+                        Efetivo em Campo ({currentTotalWorkers} operários)
                       </h3>
                       <button
                         type="button"
@@ -1073,14 +1081,19 @@ export const App: React.FC = () => {
                         Gerenciar Efetivo <ChevronRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                      {diaryState.workforceSnapshot.entries.slice(0, 4).map((entry) => (
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                      {diaryState.workforceSnapshot.entries.map((entry) => (
                         <div
                           key={entry.role_code}
-                          className="flex items-center justify-between p-2 rounded bg-paper border border-rule text-xs"
+                          className="flex items-center justify-between p-2 rounded bg-paper border border-rule text-xs hover:border-action/40 transition-colors"
                         >
-                          <span className="font-semibold text-ink">{entry.role_name}</span>
-                          <span className="font-mono font-bold text-ink">{entry.count} operários</span>
+                          <div>
+                            <span className="font-semibold text-ink block">{entry.role_name}</span>
+                            <span className="text-[10px] text-ink-muted">{entry.company_name}</span>
+                          </div>
+                          <span className="font-mono font-bold text-ink bg-panel px-2 py-0.5 rounded border border-rule">
+                            {entry.count} operários
+                          </span>
                         </div>
                       ))}
                     </div>
