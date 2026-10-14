@@ -214,14 +214,18 @@ export class PrevisionDiarioService {
    * Converte a lista de mão de obra do Prevision para os cargos do Core Diário
    */
   public static mapearMaoObra(itens: PrevisionMaoObraItem[]): WorkforceRoleCount[] {
-    return itens.map((item) => {
+    return itens.map((item, idx) => {
       const empreiteiraLimpa = item.empreiteira?.trim() || 'Empreiteira Contratada';
       const isPropria =
         empreiteiraLimpa.toUpperCase().includes('PIEMONTE') ||
         empreiteiraLimpa.toUpperCase().includes('CONSTRUKORE');
 
+      const funcCode = (item.funcao || 'FUNC').substring(0, 4).toUpperCase().replace(/[^A-Z0-9]/g, 'X');
+      const compCode = empreiteiraLimpa.substring(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, 'X');
+      const roleCode = `${funcCode}-${compCode}-${idx + 1}`;
+
       return {
-        role_code: item.funcao.substring(0, 4).toUpperCase().replace(/[^A-Z]/g, 'X'),
+        role_code: roleCode,
         role_name: item.funcao,
         company_type: isPropria ? 'PROPRIA' : 'TERCEIRIZADA',
         company_name: empreiteiraLimpa,
@@ -269,11 +273,11 @@ export class PrevisionDiarioService {
   /**
    * Converte as fotos do Prevision para o caderno de fotos do Core Diário com tipagem estrita
    */
-  public static mapearFotos(fotos: PrevisionFotoItem[], reportingDayId: string, dataIso: string): SourceEvent[] {
+  public static mapearFotos(fotos: PrevisionFotoItem[], reportingDayId: string, dataIso: string, projectId: string = 'poty-01'): SourceEvent[] {
     return fotos.map((foto, idx) => ({
       id: `prev-foto-${idx + 1}`,
       tenant_id: 'tenant-prevision',
-      project_id: 'poty-01',
+      project_id: projectId,
       reporting_day_id: reportingDayId,
       source_type: 'MANUAL_IMAGE' as const,
       occurred_at: `${dataIso}T12:00:00-03:00`,
@@ -464,7 +468,7 @@ export class PrevisionDiarioService {
     const totalWorkers = workforceEntries.reduce((acc, w) => acc + w.count, 0);
 
     const productionEntries = this.mapearAtividades(detalhe.atividades || [], reportingDay.id);
-    const sourceEvents = this.mapearFotos(detalhe.fotos || [], reportingDay.id, rel.data);
+    const sourceEvents = this.mapearFotos(detalhe.fotos || [], reportingDay.id, rel.data, project.id);
 
     const weatherObservations: WeatherObservation[] = [
       {

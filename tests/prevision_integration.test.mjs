@@ -3,14 +3,18 @@ import assert from 'node:assert/strict';
 
 // Simulador dos métodos de domínio do PrevisionDiarioService para execução pura em Node.js
 function mapearMaoObra(itens) {
-  return itens.map((item) => {
+  return itens.map((item, idx) => {
     const empreiteiraLimpa = item.empreiteira?.trim() || 'Empreiteira Contratada';
     const isPropria =
       empreiteiraLimpa.toUpperCase().includes('PIEMONTE') ||
       empreiteiraLimpa.toUpperCase().includes('CONSTRUKORE');
 
+    const funcCode = (item.funcao || 'FUNC').substring(0, 4).toUpperCase().replace(/[^A-Z0-9]/g, 'X');
+    const compCode = empreiteiraLimpa.substring(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, 'X');
+    const roleCode = `${funcCode}-${compCode}-${idx + 1}`;
+
     return {
-      role_code: item.funcao.substring(0, 4).toUpperCase().replace(/[^A-Z]/g, 'X'),
+      role_code: roleCode,
       role_name: item.funcao,
       company_type: isPropria ? 'PROPRIA' : 'TERCEIRIZADA',
       company_name: empreiteiraLimpa,
@@ -86,6 +90,10 @@ test('Testes Automatizados de Portabilidade & Leitura do Acervo Prevision na VPS
 
     const totalHomens = convertidos.reduce((acc, c) => acc + c.count, 0);
     assert.equal(totalHomens, 29, 'Total de operários deve somar 29');
+
+    // Valida unicidade estrita dos role_codes para não haver colisão no React key
+    const uniqueRoleCodes = new Set(convertidos.map((c) => c.role_code));
+    assert.equal(uniqueRoleCodes.size, convertidos.length, 'Todos os role_codes devem ser estritamente únicos');
   });
 
   // 2. Mapeamento de Frentes de Serviço e Extração de Local / Pavimento

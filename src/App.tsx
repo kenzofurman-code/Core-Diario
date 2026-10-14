@@ -108,9 +108,34 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  const handleSelectProject = (project: ProjectContext) => {
-    const state = DiaryStorageService.switchProject(project);
-    setDiaryState({ ...state });
+  const handleSelectProject = async (project: ProjectContext) => {
+    // 1. Muda localmente para a obra (carrega do arquivo local se já existir ou cria estado limpo)
+    const baseState = DiaryStorageService.switchProject(project);
+    setDiaryState({ ...baseState });
+
+    // 2. Se a obra tiver relatórios na VPS, busca automaticamente o diário mais recente para carregar efetivo e fotos reais
+    try {
+      setIsLoadingReports(true);
+      const res = await PrevisionDiarioService.fetchRelatorios({ obraId: project.id, limit: 1 });
+      if (res && res.records && res.records.length > 0) {
+        const latestItem = res.records[0];
+        const detalhe = await PrevisionDiarioService.fetchDetalheRelatorio(latestItem.relatorio_id);
+        if (detalhe) {
+          const mappedState = PrevisionDiarioService.mapearDetalheParaDiaryState(
+            detalhe,
+            baseState,
+            project
+          );
+          DiaryStorageService.saveDayToArchive(mappedState, project.id);
+          DiaryStorageService.saveState(mappedState);
+          setDiaryState({ ...mappedState });
+        }
+      }
+    } catch (err) {
+      console.warn('[App] Falha ao sincronizar diário inicial da obra selecionada:', err);
+    } finally {
+      setIsLoadingReports(false);
+    }
   };
 
   // Carregamento dinâmico dos relatórios da obra ativa
@@ -394,7 +419,7 @@ export const App: React.FC = () => {
             diaryState,
             diaryState.project
           );
-          DiaryStorageService.saveDayToArchive(state);
+          DiaryStorageService.saveDayToArchive(state, diaryState.project.id);
           DiaryStorageService.saveState(state);
           setDiaryState({ ...state });
           return;
@@ -404,8 +429,8 @@ export const App: React.FC = () => {
       }
     }
 
-    // Fallback: alterna dia via arquivo local
-    const state = DiaryStorageService.switchReportingDay(targetDate);
+    // Fallback: alterna dia via arquivo local da obra ativa
+    const state = DiaryStorageService.switchReportingDay(targetDate, diaryState.project.id);
     setDiaryState({ ...state });
   };
 
@@ -536,12 +561,12 @@ export const App: React.FC = () => {
 
   // Lista de resumos e navegação entre datas (combina diários da obra na VPS e edições locais)
   const reportsSummaries = useMemo(() => {
-    const localList = DiaryStorageService.listDailyReportsSummaries();
+    const localList = DiaryStorageService.listDailyReportsSummaries(diaryState.project.id);
     const map = new Map<string, DailyReportSummaryItem>();
     obraReports.forEach((r) => map.set(r.date, r));
     localList.forEach((r) => map.set(r.date, r));
     return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
-  }, [obraReports, diaryState.reportingDay.report_date]);
+  }, [obraReports, diaryState.project.id, diaryState.reportingDay.report_date]);
   const currentDateIndex = reportsSummaries.findIndex((r) => r.date === diaryState.dailyReport.report_date);
   const prevDate = currentDateIndex >= 0 && currentDateIndex < reportsSummaries.length - 1
     ? reportsSummaries[currentDateIndex + 1].date

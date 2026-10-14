@@ -994,8 +994,17 @@ export class DiaryStorageService {
     return defaultState;
   }
 
-  private static loadArchive(): Record<string, DiaryState> {
-    const raw = localStorage.getItem(ARCHIVE_STORAGE_KEY);
+  private static getArchiveStorageKey(projectId?: string): string {
+    if (!projectId || projectId === 'poty-01' || projectId === '6914a7fa72e41c32af003614') {
+      return ARCHIVE_STORAGE_KEY;
+    }
+    return `construkore_diary_archive_${projectId}`;
+  }
+
+  private static loadArchive(projectId?: string): Record<string, DiaryState> {
+    const isPoty = !projectId || projectId === 'poty-01' || projectId === '6914a7fa72e41c32af003614';
+    const storageKey = this.getArchiveStorageKey(projectId);
+    const raw = localStorage.getItem(storageKey);
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
@@ -1007,7 +1016,12 @@ export class DiaryStorageService {
       }
     }
 
-    // Seed inicial de múltiplos dias para demonstração e navegação pericial
+    // Se for outra obra e ainda não houver diários locais gravados, retorna vazio (sem seed do Poty!)
+    if (!isPoty) {
+      return {};
+    }
+
+    // Seed inicial de múltiplos dias para demonstração e navegação pericial (Apenas Obra Poty)
     const baseCurrent = this.loadState();
     const currentDate = baseCurrent.reportingDay.report_date;
 
@@ -1142,13 +1156,14 @@ export class DiaryStorageService {
       '2026-09-09': draftTuesdayState,
     };
 
-    this.saveArchive(initialArchive);
+    this.saveArchive(initialArchive, projectId);
     return initialArchive;
   }
 
-  private static saveArchive(archive: Record<string, DiaryState>): void {
+  private static saveArchive(archive: Record<string, DiaryState>, projectId?: string): void {
     try {
-      localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(archive));
+      const storageKey = this.getArchiveStorageKey(projectId);
+      localStorage.setItem(storageKey, JSON.stringify(archive));
     } catch (e) {
       console.warn('[DiaryStorageService] Falha ao persistir arquivo de dias:', e);
     }
@@ -1156,15 +1171,21 @@ export class DiaryStorageService {
 
   public static saveState(state: DiaryState): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    // Sincroniza automaticamente a data salva no arquivo geral de dias
-    if (state.reportingDay?.report_date) {
-      const raw = localStorage.getItem(ARCHIVE_STORAGE_KEY);
-      const archive = raw ? JSON.parse(raw) : {};
+    // Sincroniza automaticamente a data salva no arquivo específico da obra
+    if (state.reportingDay?.report_date && state.project?.id) {
+      const storageKey = this.getArchiveStorageKey(state.project.id);
+      const raw = localStorage.getItem(storageKey);
+      let archive: Record<string, DiaryState> = {};
+      if (raw) {
+        try {
+          archive = JSON.parse(raw) || {};
+        } catch {}
+      }
       archive[state.reportingDay.report_date] = state;
       try {
-        localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(archive));
+        localStorage.setItem(storageKey, JSON.stringify(archive));
       } catch (e) {
-        console.warn('[DiaryStorageService] Falha ao sincronizar dia ativo no arquivo:', e);
+        console.warn('[DiaryStorageService] Falha ao sincronizar dia ativo no arquivo da obra:', e);
       }
     }
   }
@@ -1176,19 +1197,25 @@ export class DiaryStorageService {
   /**
    * Lista o resumo de todos os dias registrados no arquivo com métricas e status
    */
-  public static listDailyReportsSummaries(): DailyReportSummaryItem[] {
-    const archive = this.loadArchive();
+  /**
+   * Lista o resumo de todos os dias registrados no arquivo com métricas e status para a obra informada
+   */
+  public static listDailyReportsSummaries(projectId?: string): DailyReportSummaryItem[] {
     const currentState = this.loadState();
+    const targetProjectId = projectId || currentState.project?.id;
+    const archive = this.loadArchive(targetProjectId);
     const currentDate = currentState.reportingDay.report_date;
 
-    // Garante que o estado ativo atual esteja atualizado no arquivo
-    archive[currentDate] = currentState;
+    // Se o estado ativo atual pertencer a esta mesma obra, garante que esteja atualizado no arquivo
+    if (currentState.project?.id === targetProjectId) {
+      archive[currentDate] = currentState;
+    }
 
     const dates = Object.keys(archive).sort((a, b) => b.localeCompare(a));
 
     return dates.map((date) => {
       const dayState = archive[date];
-      const isCurrent = date === currentDate;
+      const isCurrent = date === currentDate && currentState.project?.id === targetProjectId;
       const report = dayState.dailyReport;
       const totalWorkers = dayState.workforceSnapshot?.total_workers || 0;
       const planned = dayState.productionEntries?.reduce((acc, curr) => acc + curr.quantity_planned, 0) || 0;
@@ -1239,16 +1266,17 @@ export class DiaryStorageService {
   }
 
   /**
-   * Salva um dia específico no arquivo persistente de diários
+   * Salva um dia específico no arquivo persistente da respectiva obra
    */
-  public static saveDayToArchive(targetState: DiaryState): void {
-    const archive = this.loadArchive();
+  public static saveDayToArchive(targetState: DiaryState, projectId?: string): void {
+    const targetProjectId = projectId || targetState.project?.id;
+    const archive = this.loadArchive(targetProjectId);
     archive[targetState.reportingDay.report_date] = targetState;
-    this.saveArchive(archive);
+    this.saveArchive(archive, targetProjectId);
   }
 
   /**
-   * Alterna a obra ativa da aplicação para uma das 16 obras cadastradas
+   * Alterna a obra ativa da aplicação de forma isolada, sem herdar dados de outras obras
    */
   public static switchProject(newProject: ProjectContext): DiaryState {
     const currentState = this.loadState();
@@ -1256,54 +1284,83 @@ export class DiaryStorageService {
       return currentState;
     }
 
-    // Salva o dia atual da obra anterior no arquivo
-    const currentArchive = this.loadArchive();
-    currentArchive[currentState.reportingDay.report_date] = currentState;
-    this.saveArchive(currentArchive);
+    // 1. Salva o dia atual da obra anterior no arquivo da obra anterior
+    this.saveDayToArchive(currentState, currentState.project?.id);
 
-    // Tenta carregar o arquivo ou estado já existente para a nova obra
-    const projectArchiveKey = `construkore_diary_archive_${newProject.id}`;
-    const rawProjectArchive = localStorage.getItem(projectArchiveKey);
-    if (rawProjectArchive) {
-      try {
-        const parsed = JSON.parse(rawProjectArchive);
-        const dates = Object.keys(parsed).sort((a, b) => b.localeCompare(a));
-        if (dates.length > 0) {
-          const targetState = parsed[dates[0]];
-          targetState.project = newProject;
-          this.saveState(targetState);
-          return targetState;
-        }
-      } catch (e) {
-        console.error('Falha ao restaurar arquivo da obra:', e);
-      }
+    // 2. Tenta carregar o arquivo ou estado já existente para a nova obra
+    const projectArchive = this.loadArchive(newProject.id);
+    const dates = Object.keys(projectArchive).sort((a, b) => b.localeCompare(a));
+    if (dates.length > 0) {
+      const targetState = projectArchive[dates[0]];
+      targetState.project = newProject;
+      this.saveState(targetState);
+      return targetState;
     }
 
-    // Caso não haja diários salvos localmente para a nova obra, instancia um novo estado base para ela
+    // 3. Caso não haja diários salvos localmente para a nova obra, instancia um novo estado base LIMPO para ela
+    const todayStr = new Date().toISOString().split('T')[0];
+    const cleanReportingDay: ReportingDay = {
+      id: `rep-day-${newProject.codigo.toLowerCase()}-${todayStr}`,
+      tenant_id: newProject.id,
+      project_id: newProject.id,
+      report_date: todayStr,
+      shift_name: 'Turno Integral (07:00 às 17:00)',
+      workflow_state: 'OPEN',
+      responsible_user_id: currentState.currentUser?.id || 'usr-03',
+      responsible_user_name: currentState.currentUser?.name || 'Engenharia Residente',
+      completion_percentage: 0,
+      data_quality_score: 100,
+      opened_at: `${todayStr}T07:00:00-03:00`,
+      status: 'active',
+      created_at: `${todayStr}T07:00:00-03:00`,
+      updated_at: `${todayStr}T07:00:00-03:00`,
+    };
+
+    const cleanDailyReport: DailyReport = {
+      id: `rdo-${newProject.codigo.toLowerCase()}-0001`,
+      tenant_id: newProject.id,
+      project_id: newProject.id,
+      reporting_day_id: cleanReportingDay.id,
+      report_number: 1,
+      formatted_number: `${newProject.codigo}-RDO-0001`,
+      report_date: todayStr,
+      workflow_state: 'DRAFT',
+      current_version_number: 1,
+      responsible_engineer_name: currentState.currentUser?.name || 'Engenharia Residente',
+    };
+
     const nextState: DiaryState = {
       ...JSON.parse(JSON.stringify(currentState)),
       project: newProject,
-      dailyReport: {
-        ...currentState.dailyReport,
-        id: `rdo-${newProject.codigo.toLowerCase()}-0001`,
-        project_id: newProject.id,
-        formatted_number: `${newProject.codigo}-RDO-0001`,
-        report_number: 1,
+      reportingDay: cleanReportingDay,
+      dailyReport: cleanDailyReport,
+      workforceSnapshot: {
+        id: `wf-${newProject.id}-${todayStr}`,
+        reporting_day_id: cleanReportingDay.id,
+        captured_at: `${todayStr}T07:15:00-03:00`,
+        total_workers: 0,
+        entries: [],
+        copied_from_yesterday: false,
       },
-      reportingDay: {
-        ...currentState.reportingDay,
-        project_id: newProject.id,
-      },
+      sourceEvents: [],
+      productionEntries: [],
+      occurrences: [],
+      conflicts: [],
+      supplyTickets: [],
+      versions: [],
+      generalNotes: '',
     };
+
     this.saveState(nextState);
     return nextState;
   }
 
   /**
-   * Alterna o dia ativo da aplicação para uma data retroativa ou futura
+   * Alterna o dia ativo da aplicação para uma data retroativa ou futura da obra atual
    */
-  public static switchReportingDay(targetDate: string): DiaryState {
+  public static switchReportingDay(targetDate: string, projectId?: string): DiaryState {
     const currentState = this.loadState();
+    const targetProjectId = projectId || currentState.project?.id;
     const currentDate = currentState.reportingDay.report_date;
 
     // Se já estiver na mesma data, não faz nada
@@ -1311,40 +1368,42 @@ export class DiaryStorageService {
       return currentState;
     }
 
-    const archive = this.loadArchive();
+    const archive = this.loadArchive(targetProjectId);
     // 1. Salva o dia atual no arquivo
     archive[currentDate] = currentState;
 
     // 2. Se o dia de destino já existe, carrega e ativa
     if (archive[targetDate]) {
       const targetState = archive[targetDate];
-      this.saveArchive(archive);
+      this.saveArchive(archive, targetProjectId);
       this.saveState(targetState);
       return targetState;
     }
 
     // 3. Se não existe, cria novo diário para aquela data
-    this.saveArchive(archive);
-    return this.createNewReportingDay({ targetDate, copyYesterdayWorkforce: true });
+    this.saveArchive(archive, targetProjectId);
+    return this.createNewReportingDay({ targetDate, copyYesterdayWorkforce: true, projectId: targetProjectId });
   }
 
   /**
-   * Cria um novo Diário de Obra para uma data selecionada
+   * Cria um novo Diário de Obra para uma data selecionada na obra ativa
    */
   public static createNewReportingDay(params: {
     targetDate: string;
     copyYesterdayWorkforce?: boolean;
+    projectId?: string;
   }): DiaryState {
-    const { targetDate, copyYesterdayWorkforce = true } = params;
+    const { targetDate, copyYesterdayWorkforce = true, projectId } = params;
     const currentState = this.loadState();
-    const archive = this.loadArchive();
+    const targetProjectId = projectId || currentState.project?.id;
+    const archive = this.loadArchive(targetProjectId);
 
     // Salva o dia atual no arquivo
     archive[currentState.reportingDay.report_date] = currentState;
 
-    // Calcula próximo número de relatório sequencial
-    const existingNumbers = Object.values(archive).map((s) => s.dailyReport?.report_number || 180);
-    const nextNumber = Math.max(...existingNumbers, 184) + 1;
+    // Calcula próximo número de relatório sequencial da obra
+    const existingNumbers = Object.values(archive).map((s) => s.dailyReport?.report_number || 0);
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
     const formattedNumber = `${currentState.project.codigo}-RDO-${String(nextNumber).padStart(4, '0')}`;
 
     const newReportingDay: ReportingDay = {
@@ -1393,7 +1452,7 @@ export class DiaryStorageService {
     };
 
     // Preenche as frentes de produção previstas a partir do planejamento de curto prazo
-    const productionEntries: ProductionEntry[] = currentState.weeklyPlanTasks.map((wpt, idx) => ({
+    const productionEntries: ProductionEntry[] = (currentState.weeklyPlanTasks || []).map((wpt, idx) => ({
       id: `prod-${targetDate}-${idx + 1}`,
       reporting_day_id: newReportingDay.id,
       task_id: wpt.id,
@@ -1452,7 +1511,7 @@ export class DiaryStorageService {
     };
 
     archive[targetDate] = newState;
-    this.saveArchive(archive);
+    this.saveArchive(archive, targetProjectId);
     this.saveState(newState);
     return newState;
   }
@@ -1460,23 +1519,24 @@ export class DiaryStorageService {
   /**
    * Exclui um rascunho de data anterior que ainda não foi emitido
    */
-  public static deleteReportingDayDraft(targetDate: string): DiaryState {
-    const archive = this.loadArchive();
+  public static deleteReportingDayDraft(targetDate: string, projectId?: string): DiaryState {
+    const currentState = this.loadState();
+    const targetProjectId = projectId || currentState.project?.id;
+    const archive = this.loadArchive(targetProjectId);
     const dayState = archive[targetDate];
-    if (!dayState) return this.loadState();
+    if (!dayState) return currentState;
 
     if (dayState.dailyReport.workflow_state === 'ISSUED') {
       throw new Error('Não é permitido excluir um Diário de Obra já emitido e congelado pericialmente.');
     }
 
     delete archive[targetDate];
-    this.saveArchive(archive);
+    this.saveArchive(archive, targetProjectId);
 
-    const currentState = this.loadState();
     if (currentState.reportingDay.report_date === targetDate) {
-      const remainingDates = Object.keys(archive).sort((a, b) => b.localeCompare(a));
-      const nextDate = remainingDates[0] || '2026-09-08';
-      if (archive[nextDate]) {
+      const remainingDates = Object.keys(archive).sort((b, a) => a.localeCompare(b));
+      const nextDate = remainingDates[0];
+      if (nextDate && archive[nextDate]) {
         this.saveState(archive[nextDate]);
         return archive[nextDate];
       }
