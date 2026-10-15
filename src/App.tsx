@@ -47,6 +47,7 @@ import {
   UserContext,
   DailyReportSummaryItem,
   ProjectContext,
+  LocationsBatchRow,
 } from './modules/diary/types/diary.types';
 import {
   Calendar,
@@ -389,27 +390,37 @@ export const App: React.FC = () => {
 
   // Handlers de Locais da Obra & Cloudflare R2 (Modo Engenharia Desktop)
   const handleUpdateLocations = (updates: Partial<ObraLocationsConfig>) => {
-    const state = DiaryStorageService.updateLocationsConfig(updates);
+    const state = DiaryStorageService.updateLocationsConfig(updates, diaryState.project.id);
     setDiaryState({ ...state });
   };
 
   const handleAddLocationItem = (type: 'torres' | 'pavimentos' | 'ambientes', item: LocationItem) => {
-    const state = DiaryStorageService.addLocationItem(type, item);
+    const state = DiaryStorageService.addLocationItem(type, item, diaryState.project.id);
     setDiaryState({ ...state });
   };
 
   const handleRemoveLocationItem = (type: 'torres' | 'pavimentos' | 'ambientes', id: string) => {
-    const state = DiaryStorageService.removeLocationItem(type, id);
+    const state = DiaryStorageService.removeLocationItem(type, id, diaryState.project.id);
     setDiaryState({ ...state });
   };
 
   const handleResetLocationsToDefault = () => {
-    const state = DiaryStorageService.resetLocationsToDefault();
+    const state = DiaryStorageService.resetLocationsToDefault(diaryState.project.id);
+    setDiaryState({ ...state });
+  };
+
+  const handleClearLocations = () => {
+    const state = DiaryStorageService.clearLocationsForProject(diaryState.project.id);
+    setDiaryState({ ...state });
+  };
+
+  const handleImportBatchLocations = (rows: LocationsBatchRow[], mode: 'replace' | 'merge') => {
+    const state = DiaryStorageService.importLocationsBatch(rows, mode, diaryState.project.id);
     setDiaryState({ ...state });
   };
 
   const handleUpdateR2Config = (updates: Partial<R2StorageConfig>) => {
-    const state = DiaryStorageService.updateR2Config(updates);
+    const state = DiaryStorageService.updateR2Config(updates, diaryState.project.id);
     setDiaryState({ ...state });
   };
 
@@ -1218,6 +1229,8 @@ export const App: React.FC = () => {
                   onRemoveLocationItem={handleRemoveLocationItem}
                   onResetLocationsToDefault={handleResetLocationsToDefault}
                   onUpdateR2Config={handleUpdateR2Config}
+                  onClearLocations={handleClearLocations}
+                  onImportBatch={handleImportBatchLocations}
                 />
               </div>
             )}

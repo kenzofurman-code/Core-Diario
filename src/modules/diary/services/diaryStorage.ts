@@ -31,12 +31,15 @@ import {
   R2StorageConfig,
   CurrentPhotoLocationSelection,
   DailyReportSummaryItem,
+  LocationsBatchRow,
 } from '../types/diary.types';
 import { WeatherService } from './weatherService';
 
 const STORAGE_KEY = 'construkore_diary_state_v7';
 const PHOTO_LOCATION_SELECTION_KEY = 'construkore_photo_location_selection_v1';
 const ARCHIVE_STORAGE_KEY = 'construkore_diary_archive_v1';
+const LOCATIONS_CONFIG_PREFIX = 'construkore_locations_config_';
+const R2_CONFIG_PREFIX = 'construkore_r2_config_';
 
 export interface DiaryState {
   project: ProjectContext;
@@ -956,12 +959,9 @@ export class DiaryStorageService {
         if (parsed.questionTemplates === undefined) {
           parsed.questionTemplates = initialQuestionTemplates;
         }
-        if (!parsed.locationsConfig || !parsed.locationsConfig.pavimentos?.length) {
-          parsed.locationsConfig = initialLocationsConfig;
-        }
-        if (!parsed.r2Config) {
-          parsed.r2Config = initialR2Config;
-        }
+        const currentProjId = parsed.project?.id || 'poty-01';
+        parsed.locationsConfig = this.getLocationsConfigForProject(currentProjId, parsed.locationsConfig);
+        parsed.r2Config = this.getR2ConfigForProject(currentProjId, parsed.r2Config);
         if (parsed.workforceSnapshot?.entries) {
           parsed.workforceSnapshot.total_workers = parsed.workforceSnapshot.entries.reduce((acc: number, c: any) => acc + (Number(c.count) || 0), 0);
         }
@@ -970,6 +970,8 @@ export class DiaryStorageService {
         console.error('Falha ao restaurar estado do RDO:', e);
       }
     }
+    const defaultLocations = this.getLocationsConfigForProject(initialProject.id);
+    const defaultR2 = this.getR2ConfigForProject(initialProject.id);
     const defaultState: DiaryState = {
       project: initialProject,
       currentUser: sampleUsers[2], // Default: Engª. Mariana Costa
@@ -991,8 +993,8 @@ export class DiaryStorageService {
       weeklyPlanTasks: initialWeeklyPlanTasks,
       contacts: initialContacts,
       questionTemplates: initialQuestionTemplates,
-      locationsConfig: initialLocationsConfig,
-      r2Config: initialR2Config,
+      locationsConfig: defaultLocations,
+      r2Config: defaultR2,
     };
     this.saveState(defaultState);
     return defaultState;
@@ -1325,6 +1327,8 @@ export class DiaryStorageService {
     if (dates.length > 0) {
       const targetState = projectArchive[dates[0]];
       targetState.project = newProject;
+      targetState.locationsConfig = this.getLocationsConfigForProject(newProject.id, targetState.locationsConfig);
+      targetState.r2Config = this.getR2ConfigForProject(newProject.id, targetState.r2Config);
       this.saveState(targetState);
       return targetState;
     }
@@ -1381,6 +1385,8 @@ export class DiaryStorageService {
       supplyTickets: [],
       versions: [],
       generalNotes: '',
+      locationsConfig: this.getLocationsConfigForProject(newProject.id),
+      r2Config: this.getR2ConfigForProject(newProject.id),
     };
 
     this.saveState(nextState);
@@ -1407,6 +1413,8 @@ export class DiaryStorageService {
     // 2. Se o dia de destino já existe, carrega e ativa
     if (archive[targetDate]) {
       const targetState = archive[targetDate];
+      targetState.locationsConfig = this.getLocationsConfigForProject(targetProjectId, targetState.locationsConfig);
+      targetState.r2Config = this.getR2ConfigForProject(targetProjectId, targetState.r2Config);
       this.saveArchive(archive, targetProjectId);
       this.saveState(targetState);
       return targetState;
@@ -1538,8 +1546,8 @@ export class DiaryStorageService {
       weeklyPlanTasks: currentState.weeklyPlanTasks,
       contacts: currentState.contacts,
       questionTemplates: currentState.questionTemplates,
-      locationsConfig: currentState.locationsConfig,
-      r2Config: currentState.r2Config,
+      locationsConfig: this.getLocationsConfigForProject(targetProjectId, currentState.locationsConfig),
+      r2Config: this.getR2ConfigForProject(targetProjectId, currentState.r2Config),
     };
 
     archive[targetDate] = newState;
@@ -2694,79 +2702,404 @@ export class DiaryStorageService {
   }
 
   // -------------------------------------------------------------------
-  // GESTÃO DE LOCAIS DA OBRA (TORRES, PAVIMENTOS, AMBIENTES)
+  // GESTÃO DE LOCAIS DA OBRA (TORRES, PAVIMENTOS, AMBIENTES) POR OBRA
   // -------------------------------------------------------------------
-  public static updateLocationsConfig(updates: Partial<ObraLocationsConfig>): DiaryState {
-    const state = this.loadState();
-    state.locationsConfig = {
-      ...state.locationsConfig,
-      ...updates,
+  public static getLocationsConfigKey(projectId: string): string {
+    return `${LOCATIONS_CONFIG_PREFIX}${projectId}`;
+  }
+
+  public static getR2ConfigKey(projectId: string): string {
+    return `${R2_CONFIG_PREFIX}${projectId}`;
+  }
+
+  public static getLocationsConfigForProject(
+    projectId?: string,
+    fallbackFromState?: ObraLocationsConfig
+  ): ObraLocationsConfig {
+    const targetProjectId = projectId || 'poty-01';
+    const key = this.getLocationsConfigKey(targetProjectId);
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (
+            parsed &&
+            Array.isArray(parsed.torres) &&
+            Array.isArray(parsed.pavimentos) &&
+            Array.isArray(parsed.ambientes)
+          ) {
+            return parsed;
+          }
+        } catch (e) {
+          console.error(`Erro ao carregar locais da obra ${targetProjectId}:`, e);
+        }
+      }
+    }
+
+    // Se for poty-01 (mock inicial do sistema), fallback para initialLocationsConfig
+    if (targetProjectId === 'poty-01') {
+      return fallbackFromState || JSON.parse(JSON.stringify(initialLocationsConfig));
+    }
+
+    // Para qualquer outra obra sem configuração prévia salva, inicia limpa/vazia
+    return {
+      torres: [],
+      pavimentos: [],
+      ambientes: [],
       atualizado_em: new Date().toISOString(),
     };
-    this.saveState(state);
-    return state;
   }
 
-  public static addLocationItem(
-    type: 'torres' | 'pavimentos' | 'ambientes',
-    item: LocationItem
+  public static saveLocationsConfigForProject(
+    config: ObraLocationsConfig,
+    projectId?: string
   ): DiaryState {
     const state = this.loadState();
-    if (!state.locationsConfig) {
-      state.locationsConfig = JSON.parse(JSON.stringify(initialLocationsConfig));
+    const targetProjectId = projectId || state.project?.id || 'poty-01';
+    const key = this.getLocationsConfigKey(targetProjectId);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(config));
     }
-    const list = state.locationsConfig[type] || [];
-    // Evita duplicação por código ou id
-    const existingIndex = list.findIndex((i) => i.id === item.id || (i.codigo && i.codigo === item.codigo));
-    if (existingIndex >= 0) {
-      list[existingIndex] = { ...list[existingIndex], ...item };
-    } else {
-      list.push(item);
-    }
-    state.locationsConfig[type] = list;
-    state.locationsConfig.atualizado_em = new Date().toISOString();
-    this.saveState(state);
-    return state;
-  }
-
-  public static removeLocationItem(
-    type: 'torres' | 'pavimentos' | 'ambientes',
-    itemId: string
-  ): DiaryState {
-    const state = this.loadState();
-    if (state.locationsConfig && state.locationsConfig[type]) {
-      state.locationsConfig[type] = state.locationsConfig[type].filter((i) => i.id !== itemId);
-      state.locationsConfig.atualizado_em = new Date().toISOString();
+    // Se o projeto for o atualmente ativo na tela, atualiza o estado
+    if (!projectId || projectId === state.project?.id) {
+      state.locationsConfig = config;
       this.saveState(state);
     }
     return state;
   }
 
-  public static resetLocationsToDefault(): DiaryState {
+  public static clearLocationsForProject(projectId?: string): DiaryState {
+    const emptyConfig: ObraLocationsConfig = {
+      torres: [],
+      pavimentos: [],
+      ambientes: [],
+      atualizado_em: new Date().toISOString(),
+    };
+    return this.saveLocationsConfigForProject(emptyConfig, projectId);
+  }
+
+  public static resetLocationsToDefault(projectId?: string): DiaryState {
+    const defaultTemplate: ObraLocationsConfig = JSON.parse(JSON.stringify(initialLocationsConfig));
+    defaultTemplate.atualizado_em = new Date().toISOString();
+    return this.saveLocationsConfigForProject(defaultTemplate, projectId);
+  }
+
+  public static updateLocationsConfig(
+    updates: Partial<ObraLocationsConfig>,
+    projectId?: string
+  ): DiaryState {
     const state = this.loadState();
-    state.locationsConfig = JSON.parse(JSON.stringify(initialLocationsConfig));
-    this.saveState(state);
+    const targetProjectId = projectId || state.project?.id || 'poty-01';
+    const current = this.getLocationsConfigForProject(targetProjectId, state.locationsConfig);
+    const updated: ObraLocationsConfig = {
+      ...current,
+      ...updates,
+      atualizado_em: new Date().toISOString(),
+    };
+    return this.saveLocationsConfigForProject(updated, targetProjectId);
+  }
+
+  public static addLocationItem(
+    type: 'torres' | 'pavimentos' | 'ambientes',
+    item: LocationItem,
+    projectId?: string
+  ): DiaryState {
+    const state = this.loadState();
+    const targetProjectId = projectId || state.project?.id || 'poty-01';
+    const current = this.getLocationsConfigForProject(targetProjectId, state.locationsConfig);
+    const list = [...(current[type] || [])];
+    const existingIndex = list.findIndex(
+      (i) => i.id === item.id || (i.codigo && i.codigo.toUpperCase() === item.codigo.toUpperCase())
+    );
+    if (existingIndex >= 0) {
+      list[existingIndex] = { ...list[existingIndex], ...item };
+    } else {
+      list.push(item);
+    }
+    current[type] = list;
+    current.atualizado_em = new Date().toISOString();
+    return this.saveLocationsConfigForProject(current, targetProjectId);
+  }
+
+  public static removeLocationItem(
+    type: 'torres' | 'pavimentos' | 'ambientes',
+    itemId: string,
+    projectId?: string
+  ): DiaryState {
+    const state = this.loadState();
+    const targetProjectId = projectId || state.project?.id || 'poty-01';
+    const current = this.getLocationsConfigForProject(targetProjectId, state.locationsConfig);
+    if (current && current[type]) {
+      current[type] = current[type].filter((i) => i.id !== itemId);
+      current.atualizado_em = new Date().toISOString();
+      return this.saveLocationsConfigForProject(current, targetProjectId);
+    }
     return state;
   }
 
-  // -------------------------------------------------------------------
-  // GESTÃO DE STORAGE CLOUDFLARE R2
-  // -------------------------------------------------------------------
-  public static updateR2Config(updates: Partial<R2StorageConfig>): DiaryState {
+  /**
+   * Importação em Lote via Planilha de 3 Colunas: Torre, Pavimento, Ambiente
+   * Permite modo 'replace' (substitui todo o cadastro da obra) ou 'merge' (acrescenta aos existentes)
+   */
+  public static importLocationsBatch(
+    rows: LocationsBatchRow[],
+    mode: 'replace' | 'merge' = 'replace',
+    projectId?: string
+  ): DiaryState {
     const state = this.loadState();
-    state.r2Config = {
-      ...state.r2Config,
+    const targetProjectId = projectId || state.project?.id || 'poty-01';
+
+    const baseConfig = mode === 'replace'
+      ? { torres: [], pavimentos: [], ambientes: [], atualizado_em: new Date().toISOString() }
+      : this.getLocationsConfigForProject(targetProjectId, state.locationsConfig);
+
+    const torresMap = new Map<string, LocationItem>();
+    const pavimentosMap = new Map<string, LocationItem>();
+    const ambientesMap = new Map<string, LocationItem>();
+
+    if (mode === 'merge') {
+      (baseConfig.torres || []).forEach((t) => torresMap.set(t.nome.trim().toLowerCase(), t));
+      (baseConfig.pavimentos || []).forEach((p) => pavimentosMap.set(p.nome.trim().toLowerCase(), p));
+      (baseConfig.ambientes || []).forEach((a) => ambientesMap.set(a.nome.trim().toLowerCase(), a));
+    }
+
+    const gerarCodigo = (nome: string, prefixo: string, index: number): string => {
+      const sanitized = nome
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Z0-9]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+      if (sanitized.length > 0 && sanitized.length <= 8) {
+        return sanitized;
+      }
+      return `${prefixo}-${String(index).padStart(2, '0')}`;
+    };
+
+    rows.forEach((row) => {
+      const torreNome = (row.torre || '').trim();
+      const pavimentoNome = (row.pavimento || '').trim();
+      const ambienteNome = (row.ambiente || '').trim();
+
+      if (torreNome) {
+        const key = torreNome.toLowerCase();
+        if (!torresMap.has(key)) {
+          const index = torresMap.size + 1;
+          torresMap.set(key, {
+            id: `tor-${Date.now().toString(36)}-${index}`,
+            codigo: gerarCodigo(torreNome, 'TOR', index),
+            nome: torreNome,
+          });
+        }
+      }
+
+      if (pavimentoNome) {
+        const key = pavimentoNome.toLowerCase();
+        if (!pavimentosMap.has(key)) {
+          const index = pavimentosMap.size + 1;
+          pavimentosMap.set(key, {
+            id: `pav-${Date.now().toString(36)}-${index}`,
+            codigo: gerarCodigo(pavimentoNome, 'PAV', index),
+            nome: pavimentoNome,
+          });
+        }
+      }
+
+      if (ambienteNome) {
+        const key = ambienteNome.toLowerCase();
+        if (!ambientesMap.has(key)) {
+          const index = ambientesMap.size + 1;
+          ambientesMap.set(key, {
+            id: `amb-${Date.now().toString(36)}-${index}`,
+            codigo: gerarCodigo(ambienteNome, 'AMB', index),
+            nome: ambienteNome,
+          });
+        }
+      }
+    });
+
+    const finalConfig: ObraLocationsConfig = {
+      torres: Array.from(torresMap.values()),
+      pavimentos: Array.from(pavimentosMap.values()),
+      ambientes: Array.from(ambientesMap.values()),
+      atualizado_em: new Date().toISOString(),
+    };
+
+    return this.saveLocationsConfigForProject(finalConfig, targetProjectId);
+  }
+
+  /**
+   * Parser inteligente de planilha (CSV ou colar direto do Excel/Google Sheets)
+   * Suporta separadores: vírgula (,), ponto e vírgula (;), tabulação (\t)
+   */
+  public static parseLocationsSpreadsheet(rawText: string): LocationsBatchRow[] {
+    if (!rawText || !rawText.trim()) return [];
+
+    const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    if (lines.length === 0) return [];
+
+    const rows: LocationsBatchRow[] = [];
+    const isHeaderLine = (c1: string, c2: string) => {
+      const n1 = c1.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const n2 = c2.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return (
+        n1.includes('torre') ||
+        n2.includes('pavimento') ||
+        n1.includes('bloco') ||
+        n2.includes('andar') ||
+        n1.includes('coluna')
+      );
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      let delimiter = ',';
+      if (line.includes('\t')) {
+        delimiter = '\t';
+      } else if (line.includes(';') && !line.includes(',')) {
+        delimiter = ';';
+      } else if (line.includes(';') && line.includes(',')) {
+        const cSemi = (line.match(/;/g) || []).length;
+        const cComma = (line.match(/,/g) || []).length;
+        delimiter = cSemi >= cComma ? ';' : ',';
+      }
+
+      const cols = line.split(delimiter).map((c) => c.replace(/^["']|["']$/g, '').trim());
+      if (cols.length === 0) continue;
+
+      const torre = cols[0] || '';
+      const pavimento = cols[1] || '';
+      const ambiente = cols[2] || '';
+
+      if (i === 0 && isHeaderLine(torre, pavimento)) {
+        continue;
+      }
+
+      if (!torre && !pavimento && !ambiente) continue;
+
+      rows.push({
+        torre,
+        pavimento,
+        ambiente,
+      });
+    }
+
+    return rows;
+  }
+
+  /**
+   * Conteúdo modelo em CSV com as 3 colunas (Torre, Pavimento, Ambiente)
+   */
+  public static getLocationsTemplateCsv(): string {
+    return [
+      'Torre,Pavimento,Ambiente',
+      'Torre A,Subsolo 02,Garagem e Reservatório Inferior',
+      'Torre A,Subsolo 01,Vagas de Garagem 01 a 25',
+      'Torre A,Térreo,Hall Social e Portaria',
+      'Torre A,1º Pavimento Tipo,Apartamento Final 1',
+      'Torre A,1º Pavimento Tipo,Apartamento Final 2',
+      'Torre A,2º Pavimento Tipo,Apartamento Final 1',
+      'Torre A,2º Pavimento Tipo,Apartamento Final 2',
+      'Torre A,Cobertura,Barrilete e Casa de Máquinas',
+      'Torre B,Térreo,Salão de Festas',
+      'Torre B,1º Pavimento Tipo,Apartamento Final 1',
+    ].join('\r\n');
+  }
+
+  /**
+   * Dispara download do arquivo modelo CSV com UTF-8 BOM para compatibilidade com o Excel
+   */
+  public static downloadLocationsTemplateCsv(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const csvContent = '\uFEFF' + this.getLocationsTemplateCsv();
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'modelo_locais_construkore.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  // -------------------------------------------------------------------
+  // GESTÃO DE STORAGE CLOUDFLARE R2 POR OBRA
+  // -------------------------------------------------------------------
+  public static getR2ConfigForProject(
+    projectId?: string,
+    fallbackFromState?: R2StorageConfig
+  ): R2StorageConfig {
+    const targetProjectId = projectId || 'poty-01';
+    const key = this.getR2ConfigKey(targetProjectId);
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            return parsed;
+          }
+        } catch (e) {
+          console.error(`Erro ao carregar R2 da obra ${targetProjectId}:`, e);
+        }
+      }
+    }
+
+    if (targetProjectId === 'poty-01') {
+      return fallbackFromState || JSON.parse(JSON.stringify(initialR2Config));
+    }
+
+    const cleanId = targetProjectId.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    return {
+      enabled: false,
+      accountId: '',
+      bucketName: `construkore-rdo-${cleanId}`,
+      publicDomainUrl: '',
+      autoSync: false,
+      uploadEndpointUrl: '',
+      apiKey: '',
+    };
+  }
+
+  public static saveR2ConfigForProject(
+    config: R2StorageConfig,
+    projectId?: string
+  ): DiaryState {
+    const state = this.loadState();
+    const targetProjectId = projectId || state.project?.id || 'poty-01';
+    const key = this.getR2ConfigKey(targetProjectId);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(config));
+    }
+    if (!projectId || projectId === state.project?.id) {
+      state.r2Config = config;
+      this.saveState(state);
+    }
+    return state;
+  }
+
+  public static updateR2Config(
+    updates: Partial<R2StorageConfig>,
+    projectId?: string
+  ): DiaryState {
+    const state = this.loadState();
+    const targetProjectId = projectId || state.project?.id || 'poty-01';
+    const current = this.getR2ConfigForProject(targetProjectId, state.r2Config);
+    const updated: R2StorageConfig = {
+      ...current,
       ...updates,
     };
-    this.saveState(state);
-    return state;
+    return this.saveR2ConfigForProject(updated, targetProjectId);
   }
 
   // -------------------------------------------------------------------
   // MEMORIZAÇÃO DA SELEÇÃO ATIVA DO CARIMBO / CÂMERA (CANTEIRO)
   // -------------------------------------------------------------------
   public static getPhotoLocationSelection(): CurrentPhotoLocationSelection {
-    const raw = localStorage.getItem(PHOTO_LOCATION_SELECTION_KEY);
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PHOTO_LOCATION_SELECTION_KEY) : null;
     if (raw) {
       try {
         return JSON.parse(raw);
@@ -2775,13 +3108,18 @@ export class DiaryStorageService {
     const state = this.loadState();
     return {
       torreId: state.locationsConfig?.torres?.[0]?.id || null,
-      pavimentoId: state.locationsConfig?.pavimentos?.[7]?.id || null, // default: 8º Pavimento
+      pavimentoId:
+        state.locationsConfig?.pavimentos?.[7]?.id ||
+        state.locationsConfig?.pavimentos?.[0]?.id ||
+        null,
       ambienteId: state.locationsConfig?.ambientes?.[0]?.id || null,
     };
   }
 
   public static setPhotoLocationSelection(selection: CurrentPhotoLocationSelection): void {
-    localStorage.setItem(PHOTO_LOCATION_SELECTION_KEY, JSON.stringify(selection));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(PHOTO_LOCATION_SELECTION_KEY, JSON.stringify(selection));
+    }
   }
 
   // Resetar dados para demonstração

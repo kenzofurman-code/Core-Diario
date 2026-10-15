@@ -725,5 +725,12 @@ export interface CurrentPhotoLocationSelection {
   ambienteId: string | null;
 }
 
+export interface LocationsBatchRow {
+  torre: string;
+  pavimento: string;
+  ambiente?: string;
+}
+
+
 
 
