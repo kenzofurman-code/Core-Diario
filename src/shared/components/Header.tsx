@@ -6,11 +6,11 @@ import { sampleUsers } from '../../modules/diary/services/diaryStorage';
 interface HeaderProps {
   project: ProjectContext;
   currentUser: UserContext;
-  currentView: 'CANTEIRO' | 'ENGENHARIA';
+  currentView: 'CANTEIRO' | 'ENGENHARIA' | 'CLIENTE';
   isDarkMode: boolean;
   availableProjects?: ProjectContext[];
   onSelectProject?: (project: ProjectContext) => void;
-  onToggleView: (view: 'CANTEIRO' | 'ENGENHARIA') => void;
+  onToggleView: (view: 'CANTEIRO' | 'ENGENHARIA' | 'CLIENTE') => void;
   onToggleTheme: () => void;
   onSelectUser: (user: UserContext) => void;
   onReset: () => void;
@@ -80,31 +80,43 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Centro: Alternador de Visão (Canteiro vs Engenharia) */}
+        {/* Centro: Alternador de Visão (Canteiro vs Engenharia vs Cliente) */}
         <div className="flex items-center bg-paper p-1 rounded-pill border border-rule">
           <button
             type="button"
             onClick={() => onToggleView('CANTEIRO')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-pill text-xs font-semibold transition-all ${
               currentView === 'CANTEIRO'
                 ? 'bg-action text-white shadow-xs'
                 : 'text-ink-secondary hover:text-ink'
             }`}
           >
             <Smartphone className="w-3.5 h-3.5" />
-            Modo Canteiro (Mobile)
+            Canteiro
           </button>
           <button
             type="button"
             onClick={() => onToggleView('ENGENHARIA')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-pill text-xs font-semibold transition-all ${
               currentView === 'ENGENHARIA'
                 ? 'bg-action text-white shadow-xs'
                 : 'text-ink-secondary hover:text-ink'
             }`}
           >
             <Monitor className="w-3.5 h-3.5" />
-            Modo Engenharia (Desktop)
+            Engenharia
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggleView('CLIENTE')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-pill text-xs font-semibold transition-all ${
+              currentView === 'CLIENTE'
+                ? 'bg-action text-white shadow-xs'
+                : 'text-ink-secondary hover:text-ink'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            Portal Cliente
           </button>
         </div>
 

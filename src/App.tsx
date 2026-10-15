@@ -23,9 +23,13 @@ import { ShortTermPlanningPanel } from './modules/diary/components/desktop/Short
 import { ContactsManagerPanel } from './modules/diary/components/desktop/ContactsManagerPanel';
 import { LocationsAndR2Panel } from './modules/diary/components/desktop/LocationsAndR2Panel';
 import { ReportsHistoryPanel } from './modules/diary/components/desktop/ReportsHistoryPanel';
+import { PhotoAndDocGalleryPanel } from './modules/diary/components/desktop/PhotoAndDocGalleryPanel';
+import { MonthlyClientReportView } from './modules/diary/components/report/MonthlyClientReportView';
+import { ClientPortalView } from './modules/client/ClientPortalView';
 import { PrevisionDiarioService } from './modules/diary/services/previsionDiarioService';
 import { AuthScreen } from './modules/auth/AuthScreen';
 import {
+  SourceEvent,
   SourceConflict,
   WorkflowStep,
   BlockingRulesConfig,
@@ -67,9 +71,10 @@ import {
 
 export const App: React.FC = () => {
   const [diaryState, setDiaryState] = useState<DiaryState>(DiaryStorageService.getState());
-  const [currentView, setCurrentView] = useState<'CANTEIRO' | 'ENGENHARIA'>('CANTEIRO');
+  const [currentView, setCurrentView] = useState<'CANTEIRO' | 'ENGENHARIA' | 'CLIENTE'>('CANTEIRO');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isDocumentViewOpen, setIsDocumentViewOpen] = useState(false);
+  const [isMonthlyClientReportOpen, setIsMonthlyClientReportOpen] = useState(false);
   const [selectedConflict, setSelectedConflict] = useState<SourceConflict | null>(null);
   const [isWorkflowEditorOpen, setIsWorkflowEditorOpen] = useState(false);
   const [overrideShift, setOverrideShift] = useState<'MANHA' | 'TARDE' | 'NOITE' | null>(null);
@@ -199,7 +204,7 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const handleLogin = (user: UserContext, preferredView: 'CANTEIRO' | 'ENGENHARIA') => {
+  const handleLogin = (user: UserContext, preferredView: 'CANTEIRO' | 'ENGENHARIA' | 'CLIENTE') => {
     const state = DiaryStorageService.setCurrentUser(user);
     setDiaryState({ ...state });
     setCurrentView(preferredView);
@@ -216,9 +221,14 @@ export const App: React.FC = () => {
   };
 
   // Alternador com checagem de PIN de Engenharia
-  const handleRequestToggleView = (view: 'CANTEIRO' | 'ENGENHARIA') => {
+  const handleRequestToggleView = (view: 'CANTEIRO' | 'ENGENHARIA' | 'CLIENTE') => {
     if (view === 'CANTEIRO') {
       setCurrentView('CANTEIRO');
+      return;
+    }
+
+    if (view === 'CLIENTE') {
+      setCurrentView('CLIENTE');
       return;
     }
 
@@ -945,6 +955,8 @@ export const App: React.FC = () => {
                 <h2 className="text-base font-bold text-ink">
                   {engineeringSection === 'OVERVIEW' && 'Visão Geral & Governança do RDO'}
                   {engineeringSection === 'REPORTS_HISTORY' && 'Histórico de RDOs, Dias Anteriores & Arquivo'}
+                  {engineeringSection === 'PHOTO_GALLERY' && 'Galeria Inteligente de Fotos & Documentos Técnicos'}
+                  {engineeringSection === 'CLIENT_REPORT' && 'Relatório Mensal de Relacionamento com o Cliente (A4)'}
                   {engineeringSection === 'WORKFORCE' && 'Gestão & Edição do Efetivo de Obra'}
                   {engineeringSection === 'PRODUCTION' && 'Apontamento & Avanço Físico Diário'}
                   {engineeringSection === 'SHORT_TERM_PLANNING' && 'Curto Prazo — Planejamento Semanal (LPS)'}
@@ -1265,6 +1277,32 @@ export const App: React.FC = () => {
               </div>
             )}
 
+            {/* SEÇÃO: GALERIA INTELIGENTE DE FOTOS & DOCUMENTOS TÉCNICOS */}
+            {engineeringSection === 'PHOTO_GALLERY' && (
+              <div className="animate-in fade-in duration-200">
+                <PhotoAndDocGalleryPanel
+                  project={diaryState.project}
+                  currentUser={diaryState.currentUser}
+                  locationsConfig={diaryState.locationsConfig}
+                  sourceEvents={diaryState.sourceEvents}
+                  onAddEvent={(evt) => {
+                    const result = DiaryStorageService.addSourceEvent(evt as SourceEvent);
+                    setDiaryState({ ...result.state });
+                  }}
+                />
+              </div>
+            )}
+
+            {/* SEÇÃO: RELATÓRIO DO CLIENTE (MENSAL - A4) */}
+            {engineeringSection === 'CLIENT_REPORT' && (
+              <div className="animate-in fade-in duration-200">
+                <MonthlyClientReportView
+                  project={diaryState.project}
+                  onClose={() => setEngineeringSection('OVERVIEW')}
+                />
+              </div>
+            )}
+
             {/* SEÇÃO 8: LINHA DO TEMPO */}
             {engineeringSection === 'TIMELINE' && (
               <div className="animate-in fade-in duration-200">
@@ -1273,6 +1311,20 @@ export const App: React.FC = () => {
             )}
           </main>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VISÃO 3: PORTAL DO CLIENTE & FISCAL (Transparência, Aprovação & Relatórios) */}
+      {/* ========================================================================= */}
+      {currentView === 'CLIENTE' && (
+        <ClientPortalView
+          project={diaryState.project}
+          currentUser={diaryState.currentUser}
+          availableProjects={availableProjects}
+          onSelectProject={handleSelectProject}
+          onLogout={handleLogout}
+          onSwitchToEngineering={() => handleRequestToggleView('ENGENHARIA')}
+        />
       )}
 
       {/* Modal de Conciliação de Conflito de Fontes (Fase 3) */}
@@ -1356,6 +1408,14 @@ export const App: React.FC = () => {
         photos={photoEvidences}
         documentHash={diaryState.versions[diaryState.versions.length - 1]?.document_hash}
       />
+
+      {/* Relatório Mensal Executivo de Relacionamento com o Cliente (A4) */}
+      {isMonthlyClientReportOpen && (
+        <MonthlyClientReportView
+          project={diaryState.project}
+          onClose={() => setIsMonthlyClientReportOpen(false)}
+        />
+      )}
 
       {/* Modal de Simulação de Coleta Ativa & Webhook Inbound WhatsApp (Evolution + n8n) */}
       <WhatsAppInboundSimulatorModal

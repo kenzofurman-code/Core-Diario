@@ -10,7 +10,7 @@ export interface UserContext {
   id: string;
   name: string;
   email: string;
-  role: 'encarregado' | 'mestre' | 'engenheiro_residente' | 'gerente_obra' | 'fiscal_cliente';
+  role: 'encarregado' | 'mestre' | 'engenheiro_residente' | 'gerente_obra' | 'fiscal_cliente' | 'cliente';
   avatar_url?: string;
 }
 
@@ -57,6 +57,7 @@ export type SourceEventType =
   | 'MANUAL_TEXT'
   | 'MANUAL_AUDIO'
   | 'MANUAL_IMAGE'
+  | 'TECHNICAL_DOCUMENT'
   | 'MATERIAL_SHORTAGE'
   | 'WORKFORCE_COUNT'
   | 'PRODUCTION_DELTA'
@@ -67,6 +68,15 @@ export type SourceEventType =
   | 'WHATSAPP_AUDIO'
   | 'WHATSAPP_IMAGE'
   | 'WHATSAPP_DOCUMENT';
+
+export type TechnicalDocumentCategory =
+  | 'LAUDO_CONCRETO'
+  | 'FVS_SERVICO'
+  | 'SEGURANCA_TRABALHO'
+  | 'PROJETO_ASBUILT'
+  | 'NOTA_ENTREGA'
+  | 'RELATORIO_TECNICO'
+  | 'OUTROS';
 
 export type EventReviewState = 'pending_review' | 'confirmed' | 'conflict' | 'discarded';
 
@@ -90,6 +100,17 @@ export interface SourceEvent {
   whatsapp_sender_phone?: string;
   whatsapp_message_id?: string;
   information_request_id?: string;
+  // Metadados enriquecidos para Galeria & Documentos
+  document_category?: TechnicalDocumentCategory;
+  file_name?: string;
+  file_size_kb?: number;
+  file_type?: string;
+  task_id?: string;
+  service_name?: string;
+  torre_id?: string;
+  pavimento_id?: string;
+  ambiente_id?: string;
+  approved_for_rdo?: boolean;
   review_state: EventReviewState;
   confidence: number;
   review_notes?: string;
@@ -499,6 +520,8 @@ export interface WhatsAppInboundWebhookPayload {
 export type EngineeringNavSection =
   | 'OVERVIEW'            // Visão Geral & Governança (KPIs, Assinaturas, Fechamento)
   | 'REPORTS_HISTORY'     // Histórico & Calendário de RDOs Anteriores (Navegação & Edição Retroativa)
+  | 'PHOTO_GALLERY'       // Galeria Inteligente de Fotos & Documentos Técnicos
+  | 'CLIENT_REPORT'       // Relatório Mensal de Relacionamento com o Cliente (A4)
   | 'WORKFORCE'           // Gestão & Edição de Efetivo (Próprios vs Terceirizados)
   | 'PRODUCTION'          // Apontamento & Edição de Produção Diária
   | 'SHORT_TERM_PLANNING' // Planejamento Semanal de Curto Prazo (Atribuição por Encarregado)
@@ -509,7 +532,83 @@ export type EngineeringNavSection =
   | 'WEATHER'             // Clima & Intempérie Pericial
   | 'TIMELINE';           // Linha do Tempo Auditável
 
+// ---------------------------------------------------------------------
+// 10.1 RELATÓRIO DE RELACIONAMENTO COM O CLIENTE (MENSAL - A4)
+// ---------------------------------------------------------------------
+export interface MonthlyWorkforceMetric {
+  average_workers_per_day: number;
+  peak_workers: number;
+  peak_date: string;
+  total_man_hours: number;
+  own_workers_avg: number;
+  subcontractor_workers_avg: number;
+}
+
+export interface MonthlyWeatherMetric {
+  total_days: number;
+  working_days: number;
+  days_clear: number;
+  days_cloudy: number;
+  days_rain: number;
+  contractual_rain_days: number; // Dias de chuva impeditiva (> threshold)
+  hours_lost_to_rain: number;
+  accumulated_rain_mm: number;
+}
+
+export interface MonthlyProductionMetric {
+  task_id: string;
+  wbs_code: string;
+  service_name: string;
+  planned_quantity: number;
+  executed_quantity: number;
+  uom: string;
+  progress_pct: number;
+  status: 'NO_PRAZO' | 'ATRASADO' | 'CONCLUIDO';
+}
+
+export interface MonthlyOccurrenceMetric {
+  id: string;
+  date: string;
+  title: string;
+  category: OccurrenceCategory;
+  severity: OccurrenceSeverity;
+  status: 'PENDING' | 'RESOLVED';
+  impact_hours: number;
+  solution_notes?: string;
+}
+
+export interface MonthlyPhotoHighlight {
+  id: string;
+  date: string;
+  url: string;
+  title: string;
+  location?: string;
+  service_name?: string;
+  author_name?: string;
+}
+
+export interface MonthlyClientReportData {
+  mes_ano: string; // Ex: "2026-10"
+  mes_ano_formatado: string; // Ex: "Outubro de 2026"
+  project_id: string;
+  project_name: string;
+  client_name: string;
+  technical_lead_name: string;
+  contract_number?: string;
+  generated_at: string;
+  total_rdos_period: number;
+  approved_rdos_count: number;
+  executive_summary: string;
+  workforce: MonthlyWorkforceMetric;
+  weather: MonthlyWeatherMetric;
+  production: MonthlyProductionMetric[];
+  occurrences: MonthlyOccurrenceMetric[];
+  photo_highlights: MonthlyPhotoHighlight[];
+  document_hash?: string;
+}           // Linha do Tempo Auditável
+
 export interface DailyReportSummaryItem {
+  project_id?: string;
   date: string; // ISO "2026-09-08"
   formatted_date: string; // "08/09/2026"
   weekday: string; // "Segunda-feira"

@@ -24,7 +24,7 @@ interface AuthScreenProps {
   project: ProjectContext;
   availableProjects?: ProjectContext[];
   onSelectProject?: (project: ProjectContext) => void;
-  onLogin: (user: UserContext, preferredView: 'CANTEIRO' | 'ENGENHARIA') => void;
+  onLogin: (user: UserContext, preferredView: 'CANTEIRO' | 'ENGENHARIA' | 'CLIENTE') => void;
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
@@ -49,6 +49,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       localStorage.setItem('construkore_preferred_view', 'CANTEIRO');
     }
     onLogin(targetUser, 'CANTEIRO');
+  };
+
+  // Acesso direto ao Portal do Cliente / Fiscal (Sem necessidade de senha técnica de engenharia)
+  const handleAcessoCliente = () => {
+    const clientUser =
+      selectedUser.role === 'fiscal_cliente' || selectedUser.role === 'cliente'
+        ? selectedUser
+        : sampleUsers.find((u) => u.role === 'fiscal_cliente' || u.role === 'cliente') || sampleUsers[4];
+
+    if (rememberMe) {
+      localStorage.setItem('construkore_logged_user_id', clientUser.id);
+      localStorage.setItem('construkore_preferred_view', 'CLIENTE');
+    }
+    onLogin(clientUser, 'CLIENTE');
   };
 
   // Acesso ao Modo Engenharia (Exige validação de senha/PIN de segurança)
@@ -284,6 +298,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <Monitor className="w-4 h-4 text-blue-400" />
             <span>Acessar Modo Engenharia / Governança Desktop</span>
             <Lock className="w-3.5 h-3.5 text-slate-500" />
+          </button>
+
+          {/* BOTÃO DO PORTAL DO CLIENTE / FISCALIZAÇÃO */}
+          <button
+            type="button"
+            onClick={handleAcessoCliente}
+            className="w-full py-3 px-4 rounded-xl bg-slate-900/90 border border-amber-500/30 hover:border-amber-500/60 text-amber-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors shadow-sm"
+          >
+            <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <span>Portal do Cliente & Fiscalização (Transparência & Homologação)</span>
+            <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
           </button>
         </div>
       </main>

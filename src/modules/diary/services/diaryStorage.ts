@@ -90,6 +90,7 @@ export const sampleUsers: UserContext[] = [
   { id: 'usr-03', name: 'Engª. Mariana Costa', email: 'mariana.costa@construkore.com', role: 'engenheiro_residente' },
   { id: 'usr-04', name: 'Roberto Albuquerque', email: 'roberto.gerente@construkore.com', role: 'gerente_obra' },
   { id: 'usr-05', name: 'Dr. Fernando Linhares', email: 'fernando.fiscal@caixa.gov.br', role: 'fiscal_cliente' },
+  { id: 'usr-06', name: 'Dr. Paulo Sampaio (Investidor / Cliente)', email: 'paulo.sampaio@investimentos.com.br', role: 'cliente' },
 ];
 
 const initialReportingDay: ReportingDay = {
@@ -1004,7 +1005,7 @@ export class DiaryStorageService {
     return `construkore_diary_archive_${projectId}`;
   }
 
-  private static loadArchive(projectId?: string): Record<string, DiaryState> {
+  public static loadArchive(projectId?: string): Record<string, DiaryState> {
     const isPoty = !projectId || projectId === 'poty-01' || projectId === '6914a7fa72e41c32af003614';
     const storageKey = this.getArchiveStorageKey(projectId);
     const raw = localStorage.getItem(storageKey);
@@ -1163,13 +1164,40 @@ export class DiaryStorageService {
     return initialArchive;
   }
 
-  private static saveArchive(archive: Record<string, DiaryState>, projectId?: string): void {
+  public static saveArchive(archive: Record<string, DiaryState>, projectId?: string): void {
     try {
       const storageKey = this.getArchiveStorageKey(projectId);
       localStorage.setItem(storageKey, JSON.stringify(archive));
     } catch (e) {
       console.warn('[DiaryStorageService] Falha ao persistir arquivo de dias:', e);
     }
+  }
+
+  /**
+   * Homologa um ou mais relatórios por data no arquivo da obra (Aprovação do Cliente / Fiscal)
+   */
+  public static approveReportsByDates(dates: string[], clientName: string, projectId?: string): void {
+    const targetProjectId = projectId || this.loadState().project?.id;
+    const archive = this.loadArchive(targetProjectId);
+    const now = new Date().toISOString();
+
+    dates.forEach((date) => {
+      const dayState = archive[date];
+      if (dayState) {
+        dayState.dailyReport.workflow_state = 'APPROVED';
+        dayState.dailyReport.approved_at = now;
+        dayState.dailyReport.responsible_engineer_name = `${dayState.dailyReport.responsible_engineer_name} (Homologado por ${clientName})`;
+
+        const clientStep = dayState.workflow.steps.find((s) => s.step_number === 4 || s.role_code === 'fiscal_cliente');
+        if (clientStep) {
+          clientStep.status = 'APPROVED';
+          clientStep.approved_at = now;
+          clientStep.signature_hash = `sig-sha256-CLIENT-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+        }
+      }
+    });
+
+    this.saveArchive(archive, targetProjectId);
   }
 
   public static saveState(state: DiaryState): void {
@@ -1246,6 +1274,7 @@ export class DiaryStorageService {
         conflictsCount > 0 || dayState.occurrences?.some((o) => !o.approved_for_rdo);
 
       return {
+        project_id: targetProjectId,
         date,
         formatted_date: formattedDate,
         weekday,

@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "node --test tests/slice1.test.mjs tests/full_phases.test.mjs tests/weather.test.mjs tests/share_and_dossier.test.mjs tests/whatsapp_inbound.test.mjs tests/engineering_and_short_term.test.mjs tests/contacts_and_templates.test.mjs tests/locations_and_r2.test.mjs tests/reports_history.test.mjs tests/prevision_integration.test.mjs",
+    "test": "node --test tests/slice1.test.mjs tests/full_phases.test.mjs tests/weather.test.mjs tests/share_and_dossier.test.mjs tests/whatsapp_inbound.test.mjs tests/engineering_and_short_term.test.mjs tests/contacts_and_templates.test.mjs tests/locations_and_r2.test.mjs tests/reports_history.test.mjs tests/prevision_integration.test.mjs tests/client_portal_and_reports.test.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc && vite build",
-    "verify": "tsc --noEmit && node --test tests/slice1.test.mjs tests/full_phases.test.mjs tests/weather.test.mjs tests/share_and_dossier.test.mjs tests/whatsapp_inbound.test.mjs tests/engineering_and_short_term.test.mjs tests/contacts_and_templates.test.mjs tests/locations_and_r2.test.mjs tests/reports_history.test.mjs tests/prevision_integration.test.mjs && vite build",
+    "verify": "tsc --noEmit && node --test tests/slice1.test.mjs tests/full_phases.test.mjs tests/weather.test.mjs tests/share_and_dossier.test.mjs tests/whatsapp_inbound.test.mjs tests/engineering_and_short_term.test.mjs tests/contacts_and_templates.test.mjs tests/locations_and_r2.test.mjs tests/reports_history.test.mjs tests/prevision_integration.test.mjs tests/client_portal_and_reports.test.mjs && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

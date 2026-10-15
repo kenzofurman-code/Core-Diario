@@ -17,6 +17,8 @@ import {
   Layers,
   History,
   Database,
+  Camera,
+  FileText,
 } from 'lucide-react';
 import { EngineeringNavSection, UserContext } from '../../modules/diary/types/diary.types';
 
@@ -66,6 +68,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <History className="w-4 h-4 shrink-0" />,
       badgeCount: pendingReportsCount && pendingReportsCount > 0 ? pendingReportsCount : undefined,
       badgeColor: 'bg-warning text-slate-950 font-bold',
+    },
+    {
+      id: 'PHOTO_GALLERY',
+      label: 'Fotos & Documentos',
+      sublabel: 'Galeria & Laudos',
+      icon: <Camera className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'CLIENT_REPORT',
+      label: 'Relatório Cliente (A4)',
+      sublabel: 'Prestação de Contas',
+      icon: <FileText className="w-4 h-4 shrink-0" />,
     },
     {
       id: 'WORKFORCE',
