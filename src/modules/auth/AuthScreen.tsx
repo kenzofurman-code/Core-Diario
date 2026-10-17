@@ -18,7 +18,13 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { ProjectContext, UserContext } from '../diary/types/diary.types';
-import { sampleUsers } from '../diary/services/diaryStorage';
+import { sampleUsers, initialContacts } from '../diary/services/diaryStorage';
+import {
+  findUserByPhone,
+  findUserByQuery,
+  persistPhoneAuth,
+  getPersistedPhone,
+} from '../diary/services/phoneAuthService';
 
 interface AuthScreenProps {
   project: ProjectContext;
@@ -35,18 +41,35 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 }) => {
   const [selectedUser, setSelectedUser] = useState<UserContext>(sampleUsers[1]); // Default: Antônio Santos (Encarregado)
   const [rememberMe, setRememberMe] = useState(true);
+  const [phoneNumberInput, setPhoneNumberInput] = useState('');
+  const [recognizedUser, setRecognizedUser] = useState<UserContext | null>(null);
   
   // Senha apenas para o Modo Engenharia Desktop
   const [engineerPin, setEngineerPin] = useState('');
   const [showEngineerPinModal, setShowEngineerPinModal] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
 
+  // Auto-reconhecimento ao digitar o telefone
+  const handlePhoneInputChange = (value: string) => {
+    setPhoneNumberInput(value);
+    const user = findUserByPhone(value, initialContacts);
+    if (user) {
+      setRecognizedUser(user);
+      setSelectedUser(user);
+    } else {
+      setRecognizedUser(null);
+    }
+  };
+
   // Acesso direto ao Canteiro (Sem senha, clique e use!)
   const handleAcessoCanteiro = (user?: UserContext) => {
-    const targetUser = user || selectedUser;
+    const targetUser = user || recognizedUser || selectedUser;
     if (rememberMe) {
       localStorage.setItem('construkore_logged_user_id', targetUser.id);
       localStorage.setItem('construkore_preferred_view', 'CANTEIRO');
+      if (phoneNumberInput) {
+        persistPhoneAuth(phoneNumberInput, targetUser);
+      }
     }
     onLogin(targetUser, 'CANTEIRO');
   };
@@ -178,14 +201,58 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         <div className="text-center space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold mb-1">
             <Zap className="w-3.5 h-3.5" />
-            <span>Canteiro: 1 Clique & Use (Sem Senha)</span>
+            <span>Canteiro Mobile: 1 Clique & Use</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Quem está acessando a obra?
           </h2>
           <p className="text-sm text-slate-400 max-w-md mx-auto">
-            Selecione seu nome para abrir a câmera carimbada e registrar produção do dia.
+            Identifique-se pelo celular ou selecione seu nome abaixo para abrir o modo canteiro.
           </p>
+        </div>
+
+        {/* Reconhecimento Rápido por Celular / WhatsApp */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-300 flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-emerald-400" />
+              <span>Acesso Rápido por Celular / WhatsApp</span>
+            </label>
+            <span className="text-[10px] text-slate-400 font-mono">Auto-Login</span>
+          </div>
+
+          <div className="relative">
+            <input
+              type="tel"
+              value={phoneNumberInput}
+              onChange={(e) => handlePhoneInputChange(e.target.value)}
+              placeholder="Digite seu número (ex: 41 99888-7711)"
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono"
+            />
+          </div>
+
+          {recognizedUser && (
+            <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-between gap-3 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div>
+                  <span className="text-xs font-bold text-white block">
+                    Reconhecido: {recognizedUser.name}
+                  </span>
+                  <span className="text-[11px] text-emerald-300 font-medium capitalize">
+                    {recognizedUser.role.replace('_', ' ')}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleAcessoCanteiro(recognizedUser)}
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black shrink-0 transition-colors shadow-sm"
+              >
+                Entrar Agora
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Grade de Perfis de Usuário */}

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './shared/components/Header';
-import { DiaryStorageService, DiaryState, sampleUsers } from './modules/diary/services/diaryStorage';
+import { DiaryStorageService, DiaryState, sampleUsers, initialContacts } from './modules/diary/services/diaryStorage';
+import { CanteiroMobileView } from './modules/diary/components/mobile/CanteiroMobileView';
+import { findUserByPhone, findUserByQuery, getPersistedPhone } from './modules/diary/services/phoneAuthService';
 import { QuickCaptureBar } from './modules/diary/components/mobile/QuickCaptureBar';
 import { TodayTimeline } from './modules/diary/components/desktop/TodayTimeline';
 import { ReviewInbox } from './modules/diary/components/desktop/ReviewInbox';
@@ -177,38 +179,70 @@ export const App: React.FC = () => {
     };
   }, [diaryState.project.id, diaryState.reportingDay.report_date]);
 
-  // Auto-login instantâneo via link do WhatsApp / Magic Link (?u=usr-02 ou ?user=encarregado)
+  // Auto-login instantâneo via telefone (?tel=... ou ?phone=...) ou Magic Link (?u=usr-02 ou ?user=encarregado)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
+    const phoneParam = params.get('tel') || params.get('phone') || params.get('celular') || params.get('whatsapp');
     const userParam = params.get('u') || params.get('user') || params.get('magic');
     const viewParam = params.get('view');
+    const isMobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
-    if (userParam) {
-      const foundUser = sampleUsers.find(
-        (u: UserContext) =>
-          u.id.toLowerCase() === userParam.toLowerCase() ||
-          u.role.toLowerCase() === userParam.toLowerCase() ||
-          u.name.toLowerCase().includes(userParam.toLowerCase())
-      );
-      if (foundUser) {
-        const state = DiaryStorageService.setCurrentUser(foundUser);
-        setDiaryState({ ...state });
-        const targetView = viewParam?.toUpperCase() === 'ENGENHARIA' ? 'ENGENHARIA' : 'CANTEIRO';
-        setCurrentView(targetView);
-        setIsAuthenticated(true);
-        localStorage.setItem('construkore_logged_user_id', foundUser.id);
-        localStorage.setItem('construkore_preferred_view', targetView);
-        // Limpa parâmetro da URL sem recarregar a página
-        window.history.replaceState({}, document.title, window.location.pathname);
+    let foundUser: UserContext | null = null;
+
+    if (phoneParam) {
+      foundUser = findUserByPhone(phoneParam, diaryState.contacts || initialContacts);
+    } else if (userParam) {
+      foundUser =
+        findUserByQuery(userParam) ||
+        sampleUsers.find(
+          (u: UserContext) =>
+            u.id.toLowerCase() === userParam.toLowerCase() ||
+            u.role.toLowerCase() === userParam.toLowerCase() ||
+            u.name.toLowerCase().includes(userParam.toLowerCase())
+        ) ||
+        null;
+    } else {
+      // Se não veio param na URL, checa se tem telefone memorizado
+      const savedPhone = getPersistedPhone();
+      if (savedPhone) {
+        foundUser = findUserByPhone(savedPhone, diaryState.contacts || initialContacts);
       }
+    }
+
+    if (foundUser) {
+      const state = DiaryStorageService.setCurrentUser(foundUser);
+      setDiaryState({ ...state });
+      const targetView =
+        viewParam?.toUpperCase() === 'ENGENHARIA'
+          ? 'ENGENHARIA'
+          : isMobile
+          ? 'CANTEIRO'
+          : ((localStorage.getItem('construkore_preferred_view') as any) || 'CANTEIRO');
+      setCurrentView(targetView);
+      setIsAuthenticated(true);
+      localStorage.setItem('construkore_logged_user_id', foundUser.id);
+      localStorage.setItem('construkore_preferred_view', targetView);
+      if (phoneParam) {
+        localStorage.setItem('construkore_logged_phone', phoneParam.replace(/\D/g, ''));
+      }
+      if (foundUser.role === 'engenheiro_residente' || foundUser.role === 'gerente_obra') {
+        setIsEngineeringUnlocked(true);
+      }
+      // Limpa parâmetro da URL sem recarregar a página
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (isMobile) {
+      // Em dispositivos mobile, a visão padrão sempre é Canteiro
+      setCurrentView('CANTEIRO');
     }
   }, []);
 
   const handleLogin = (user: UserContext, preferredView: 'CANTEIRO' | 'ENGENHARIA' | 'CLIENTE') => {
+    const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
+    const finalView = isMobile ? 'CANTEIRO' : preferredView;
     const state = DiaryStorageService.setCurrentUser(user);
     setDiaryState({ ...state });
-    setCurrentView(preferredView);
+    setCurrentView(finalView);
     setIsAuthenticated(true);
     if (user.role === 'engenheiro_residente' || user.role === 'gerente_obra') {
       setIsEngineeringUnlocked(true);
@@ -217,6 +251,7 @@ export const App: React.FC = () => {
 
   const handleLogout = () => {
     localStorage.removeItem('construkore_logged_user_id');
+    localStorage.removeItem('construkore_logged_phone');
     setIsAuthenticated(false);
     setIsEngineeringUnlocked(false);
   };
@@ -797,142 +832,60 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-paper flex flex-col font-sans transition-colors">
-      {/* Header com Navegação e Controles */}
-      <Header
-        project={diaryState.project}
-        currentUser={diaryState.currentUser}
-        currentView={currentView}
-        isDarkMode={isDarkMode}
-        availableProjects={availableProjects}
-        onSelectProject={handleSelectProject}
-        onToggleView={(v) => handleRequestToggleView(v)}
-        onToggleTheme={() => setIsDarkMode(!isDarkMode)}
-        onSelectUser={(u) => {
-          if (
-            (u.role === 'engenheiro_residente' || u.role === 'gerente_obra') &&
-            !isEngineeringUnlocked &&
-            diaryState.currentUser.role === 'encarregado'
-          ) {
-            setPinModalError(null);
-            setPinInput('');
-            setShowPinModal(true);
-            return;
-          }
-          const state = DiaryStorageService.setCurrentUser(u);
-          setDiaryState({ ...state });
-        }}
-        onReset={handleReset}
-        onLogout={handleLogout}
-      />
-
       {/* ========================================================================= */}
-      {/* VISÃO 1: MODO CANTEIRO (Mobile-First / Raken)                            */}
+      {/* VISÃO 1: MODO CANTEIRO (Mobile-First / Enxuto com 6 Botões Táteis)       */}
       {/* ========================================================================= */}
-      {currentView === 'CANTEIRO' && (
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6 animate-in fade-in duration-200">
-          {renderDayBanner()}
-
-          {/* Aviso de Perfil Canteiro com Destaque de Hardware Real */}
-          <div className="bg-action-soft/30 border border-action/20 rounded-card p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs text-ink">
-              <Sparkles className="w-4 h-4 text-action shrink-0" />
-              <span>
-                <strong>Modo Canteiro Ágil:</strong> Gravação de voz com microfone real, câmera com carimbo de GPS e cópia rápida de equipes.
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-action font-bold bg-action-soft px-2 py-0.5 rounded-pill">
-              MICROFONE + CÂMERA ATIVOS
-            </span>
-          </div>
-
-          {/* Barra de Ações Rápidas (Raken Style) */}
-          <QuickCaptureBar
+      {currentView === 'CANTEIRO' ? (
+        <CanteiroMobileView
+          diaryState={diaryState}
+          project={diaryState.project}
+          currentUser={diaryState.currentUser}
+          locationsConfig={diaryState.locationsConfig}
+          r2Config={diaryState.r2Config}
+          workforce={diaryState.workforceSnapshot}
+          productionList={diaryState.productionEntries}
+          sourceEvents={diaryState.sourceEvents}
+          dailyReport={diaryState.dailyReport}
+          todayDateStr={new Date().toISOString().split('T')[0]}
+          onAddAudioEvent={handleAddAudioEvent}
+          onAddPhotoEvent={handleAddPhotoEvent}
+          onAddMaterialShortage={handleAddMaterialShortage}
+          onUpdateWorkforceCount={handleUpdateWorkforce}
+          onCopyYesterdayWorkforce={handleCopyYesterdayWorkforce}
+          onUpdateProduction={handleUpdateProduction}
+          onRequestEngineeringView={() => handleRequestToggleView('ENGENHARIA')}
+          onLogout={handleLogout}
+        />
+      ) : (
+        <>
+          {/* Header com Navegação e Controles Desktop */}
+          <Header
             project={diaryState.project}
-            locationsConfig={diaryState.locationsConfig}
-            r2Config={diaryState.r2Config}
-            workforce={diaryState.workforceSnapshot}
-            productionList={diaryState.productionEntries}
             currentUser={diaryState.currentUser}
-            onAddAudioEvent={handleAddAudioEvent}
-            onAddPhotoEvent={handleAddPhotoEvent}
-            onAddMaterialShortage={handleAddMaterialShortage}
-            onUpdateWorkforceCount={handleUpdateWorkforce}
-            onCopyYesterdayWorkforce={handleCopyYesterdayWorkforce}
-            onUpdateProduction={handleUpdateProduction}
+            currentView={currentView}
+            isDarkMode={isDarkMode}
+            availableProjects={availableProjects}
+            onSelectProject={handleSelectProject}
+            onToggleView={(v) => handleRequestToggleView(v)}
+            onToggleTheme={() => setIsDarkMode(!isDarkMode)}
+            onSelectUser={(u) => {
+              if (
+                (u.role === 'engenheiro_residente' || u.role === 'gerente_obra') &&
+                !isEngineeringUnlocked &&
+                diaryState.currentUser.role === 'encarregado'
+              ) {
+                setPinModalError(null);
+                setPinInput('');
+                setShowPinModal(true);
+                return;
+              }
+              const state = DiaryStorageService.setCurrentUser(u);
+              setDiaryState({ ...state });
+            }}
+            onReset={handleReset}
+            onLogout={handleLogout}
           />
-
-            {/* Widget de Clima & Intempérie Pericial (Opção 1) */}
-            {diaryState.weatherSummary && (
-              <WeatherWidget
-                summary={diaryState.weatherSummary}
-                onSync={handleSyncWeather}
-                onOpenOverride={(shift) => setOverrideShift(shift)}
-              />
-            )}
-
-            {/* Resumo de Produção do Dia com Status Visual */}
-            <div className="bg-panel border border-rule rounded-card p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-rule pb-2">
-                <h3 className="text-sm font-bold text-ink flex items-center gap-2">
-                  <Hammer className="w-4 h-4 text-action" />
-                  Metas de Produção Previstas para Hoje
-                </h3>
-                <span className="text-xs font-mono font-bold text-action">
-                  {globalProgress}% Concluído
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {diaryState.productionEntries.map((prod) => (
-                  <div
-                    key={prod.task_id}
-                    className="p-3 rounded-card bg-paper border border-rule-subtle space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-xs font-bold text-ink">{prod.task_name}</h4>
-                          {prod.is_critical && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-danger-soft text-danger uppercase">
-                              Crítica (Foto Req.)
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-ink-muted">{prod.location_name}</span>
-                      </div>
-                      <span className="text-xs font-mono font-bold text-ink">
-                        {prod.quantity_reported} / {prod.quantity_planned} {prod.uom}
-                      </span>
-                    </div>
-
-                    {/* Barra de Progresso */}
-                    <div className="w-full h-2 rounded-pill bg-panel border border-rule-subtle overflow-hidden">
-                      <div
-                        className={`h-full transition-all ${
-                          prod.progress_pct >= 100 ? 'bg-success' : 'bg-action'
-                        }`}
-                        style={{ width: `${Math.min(100, prod.progress_pct)}%` }}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-ink-secondary">
-                      <span>Progresso: <strong>{prod.progress_pct}%</strong></span>
-                      {prod.progress_pct >= 100 ? (
-                        <span className="text-success font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Meta Atingida
-                        </span>
-                      ) : (
-                        <span className="text-ink-muted">Em execução</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Últimos Fatos Registrados em Campo */}
-            <TodayTimeline events={diaryState.sourceEvents} />
-        </main>
+        </>
       )}
 
       {/* ========================================================================= */}
